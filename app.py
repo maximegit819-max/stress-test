@@ -1,0 +1,187 @@
+import streamlit as st
+import numpy as np
+import io
+import contextlib
+import monte_carlo_2
+import importlib
+import gc
+
+importlib.reload(monte_carlo_2)
+from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
+
+st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
+
+st.title("Simulateur Monte Carlo")
+
+# --- SIDEBAR ---
+mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)"])
+st.sidebar.divider()
+
+st.sidebar.header("Paramètres")
+
+with st.sidebar.expander("1. Durée", expanded=True):
+    annees = st.number_input("Années totales", value=10, min_value=1)
+
+with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
+    nb_periodes = st.number_input("Nombre de Périodes", value=3, min_value=1, step=1)
+    
+    mes_regimes_input = []
+    somme_annees = 0
+    for i in range(int(nb_periodes)):
+        st.markdown(f"**Période {i+1}**")
+        def_d = 3 if i==0 else (2 if i==1 else 5)
+        def_rp = 0.04 if i==0 else (-0.15 if i==1 else 0.05)
+        def_vol = 0.15 if i==0 else (0.35 if i==1 else 0.18)
+        def_yi = 0.03 if i==0 else (0.01 if i==1 else 0.04)
+        def_cd = 0.04 if i==0 else (0.0 if i==1 else 0.05)
+        
+        d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_{i}")
+        rp = st.number_input(f"Drift P{i+1}", value=def_rp, format="%.3f", key=f"rp_{i}")
+        vol = st.number_input(f"Volatilité P{i+1}", value=def_vol, format="%.3f", key=f"vol_{i}")
+        yi = st.number_input(f"Yield Initial P{i+1}", value=def_yi, format="%.4f", key=f"yi_{i}")
+        cd = st.number_input(f"Croissance Div P{i+1}", value=def_cd, format="%.3f", key=f"cd_{i}")
+        st.divider()
+        
+        somme_annees += d
+        mes_regimes_input.append({
+            "duree_annees": d,
+            "r_perf": rp,
+            "vol": vol,
+            "yield_initial": yi,
+            "croiss_div": cd
+        })
+
+with st.sidebar.expander("3. Indice Decrement", expanded=(mode == "Scénario Fixe")):
+    if mode == "Scénario Fixe":
+        niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
+    else:
+        st.info("Le Niveau Initial est testé sur une plage.")
+        spot_min = st.number_input("Spot Min", value=400.0, step=50.0)
+        spot_max = st.number_input("Spot Max", value=2000.0, step=50.0)
+        nb_spots = st.number_input("Nombre d'itérations", value=33, step=1)
+        
+    decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
+
+with st.sidebar.expander("4. Produit Autocall", expanded=False):
+    st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
+    barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
+    niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+    non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
+    frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
+
+with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
+    nb_trajectoires = st.number_input("Nb Trajectoires", value=2000 if mode == "Scénario Fixe" else 1000, step=500)
+    seed = st.number_input("Seed aléatoire", value=42, step=1)
+
+if mode == "Scénario Fixe":
+    btn_text = "Lancer le Scénario Fixe"
+else:
+    btn_text = "Lancer l'Analyse de Sensibilité"
+
+lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
+
+# --- MAIN AREA ---
+if lancer:
+    if somme_annees != annees:
+        st.error(f"La somme des durées des régimes ({somme_annees}) doit être exactement égale au total d'années ({annees}).")
+    else:
+        moteur = SimulationEngine(nb_trajectoires=int(nb_trajectoires), seed=int(seed))
+        scenario_krach = MarketScenario(config_regimes=mes_regimes_input, annees=int(annees))
+
+        if mode == "Scénario Fixe":
+            with st.spinner(f"Génération des {int(nb_trajectoires)} trajectoires de Monte Carlo en cours..."):
+                barriere_rappel = niveau_initial * barriere_rappel_pct
+                niveau_pdi = niveau_initial * niveau_pdi_pct
+                
+                mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois))
+                
+                traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                f = io.StringIO()
+                with contextlib.redirect_stdout(f):
+                    nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
+                    reps_scen = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+                stats_text = f.getvalue()
+                
+                st.success(f"Simulation terminée avec succès !")
+                
+                col_stats, col_graphs = st.columns([1, 2])
+                
+                with col_stats:
+                    st.subheader("Statistiques")
+                    st.markdown(stats_text)
+                    
+                with col_graphs:
+                    st.subheader("Visualisations")
+                    fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
+                    st.plotly_chart(fig1, use_container_width=True)
+                    st.plotly_chart(fig2, use_container_width=True)
+                    
+        else: # Analyse de Sensibilité
+            spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
+            
+            probs_pdi_dec = []
+            probs_pdi_pr = []
+            probs_rappel = []
+            ecarts_finaux_crash = []
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, spot in enumerate(spots_test):
+                status_text.text(f"Simulation pour Spot = {spot:.0f} pts ({i+1}/{len(spots_test)})...")
+                
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                pdi_niveau_dyn = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
+                
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois))
+                
+                # Réinitialiser la seed à chaque boucle pour que les courbes de sensibilité soient très lisses
+                moteur.seed = int(seed)
+                np.random.seed(moteur.seed)
+                
+                traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                valeurs_finales_dec = traj_dec[:, -1]
+                valeurs_finales_pr = traj_pr[:, -1]
+                
+                en_dessous_pdi_dec = (valeurs_finales_dec < pdi_niveau_dyn) & (~est_rappele)
+                en_dessous_pdi_pr = (valeurs_finales_pr < pdi_niveau_dyn) & (~est_rappele)
+                
+                probs_pdi_dec.append(np.mean(en_dessous_pdi_dec) * 100)
+                probs_pdi_pr.append(np.mean(en_dessous_pdi_pr) * 100)
+                probs_rappel.append(np.mean(est_rappele) * 100)
+                
+                if np.any(en_dessous_pdi_dec):
+                    moy_pr_crash_pct = (np.mean(valeurs_finales_pr[en_dessous_pdi_dec]) / spot) * 100
+                    moy_dec_crash_pct = (np.mean(valeurs_finales_dec[en_dessous_pdi_dec]) / spot) * 100
+                    ecart_final_pct = moy_pr_crash_pct - moy_dec_crash_pct
+                else:
+                    ecart_final_pct = np.nan
+                    
+                ecarts_finaux_crash.append(ecart_final_pct)
+                
+                del traj_pr, traj_dec, est_rappele, mon_indice_dec, mon_autocall
+                gc.collect()
+                
+                progress_bar.progress((i + 1) / len(spots_test))
+                
+            status_text.text("Génération du graphique interactif...")
+            
+            yield_fixe = mes_regimes_input[0]["yield_initial"]
+            
+            fig_sensibilite = moteur.plot_sensibilite(
+                spots_test, probs_pdi_dec, probs_rappel, ecarts_finaux_crash, 
+                decrement_annuel, yield_fixe, mes_regimes_input
+            )
+            
+            st.success("Analyse de Sensibilité terminée !")
+            progress_bar.empty()
+            status_text.empty()
+            
+            st.plotly_chart(fig_sensibilite, use_container_width=True)
+
+else:
+    st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
