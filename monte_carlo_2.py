@@ -180,39 +180,17 @@ class SimulationEngine:
             dec_sous_pdi = valeurs_finales_dec[en_dessous_pdi]
             pr_sous_pdi = valeurs_finales_pr[en_dessous_pdi]
             
-            q25 = np.percentile(dec_sous_pdi, 25)
-            q50 = np.percentile(dec_sous_pdi, 50)
-            q75 = np.percentile(dec_sous_pdi, 75)
+            pct_levels = [10, 25, 50, 75, 90]
+            pct_values = [np.percentile(dec_sous_pdi, p) for p in pct_levels]
             
-            print("**Analyse par quartiles (sur les trajectoires sous le PDI)**")
+            print("**Analyse par centiles (sur les trajectoires sous le PDI)**")
             
-            def get_rep(mask):
-                if not np.any(mask): return None, None
-                med_dec = np.median(dec_sous_pdi[mask])
-                indices_in_sous = np.where(mask)[0]
-                idx = indices_in_sous[np.argmin(np.abs(dec_sous_pdi[indices_in_sous] - med_dec))]
+            for p, val in zip(pct_levels, pct_values):
+                idx = np.argmin(np.abs(dec_sous_pdi - val))
                 original_idx = np.where(en_dessous_pdi)[0][idx]
-                return traj_pr[original_idx], traj_dec[original_idx]
-
-            mask_q1 = dec_sous_pdi <= q25
-            if np.any(mask_q1):
-                print(f"- **Q1 (Niveau <= {q25:.2f} pts)** : Moy Decrement = {np.mean(dec_sous_pdi[mask_q1]):.2f} pts | Moy PR = {np.mean(pr_sous_pdi[mask_q1]):.2f} pts")
-            reps.append(get_rep(mask_q1))
                 
-            mask_q2 = (dec_sous_pdi > q25) & (dec_sous_pdi <= q50)
-            if np.any(mask_q2):
-                print(f"- **Q2 ({q25:.2f} < Niveau <= {q50:.2f} pts)** : Moy Decrement = {np.mean(dec_sous_pdi[mask_q2]):.2f} pts | Moy PR = {np.mean(pr_sous_pdi[mask_q2]):.2f} pts")
-            reps.append(get_rep(mask_q2))
-                
-            mask_q3 = (dec_sous_pdi > q50) & (dec_sous_pdi <= q75)
-            if np.any(mask_q3):
-                print(f"- **Q3 ({q50:.2f} < Niveau <= {q75:.2f} pts)** : Moy Decrement = {np.mean(dec_sous_pdi[mask_q3]):.2f} pts | Moy PR = {np.mean(pr_sous_pdi[mask_q3]):.2f} pts")
-            reps.append(get_rep(mask_q3))
-                
-            mask_q4 = dec_sous_pdi > q75
-            if np.any(mask_q4):
-                print(f"- **Q4 (Niveau > {q75:.2f} pts)** : Moy Decrement = {np.mean(dec_sous_pdi[mask_q4]):.2f} pts | Moy PR = {np.mean(pr_sous_pdi[mask_q4]):.2f} pts")
-            reps.append(get_rep(mask_q4))
+                print(f"- **Top {p}%** : Niveau cible Decrement = {val:.2f} pts | PR équivalent = {pr_sous_pdi[idx]:.2f} pts")
+                reps.append((traj_pr[original_idx], traj_dec[original_idx], f"Top {p}%"))
         else:
             print("- Aucun scénario ne finit en dessous du PDI à maturité.")
             
@@ -247,24 +225,27 @@ class SimulationEngine:
         # ==========================================
         fig1 = go.Figure()
         
-        colors = ['red', 'orange', 'olive', 'green']
-        labels = ['Q1 (Pire)', 'Q2', 'Q3', 'Q4 (Moins pire)']
+        colors = ['#d73027', '#fc8d59', '#fee08b', '#d9ef8b', '#1a9850']
         
-        for q_idx, rep in enumerate(reps_scen):
+        for idx_rep in range(len(reps_scen)-1, -1, -1):
+            rep = reps_scen[idx_rep]
             if rep[0] is not None:
-                t_pr, t_dec = rep
+                t_pr, t_dec, label = rep
+                c = colors[idx_rep % len(colors)]
                 fig1.add_trace(go.Scatter(x=axe_temps, y=t_dec, mode='lines', 
-                                          line=dict(color=colors[q_idx], width=2), 
-                                          name=f'Dec {labels[q_idx]}'))
+                                          line=dict(color=c, width=2), 
+                                          name=f'Dec ({label})',
+                                          legendgroup=label))
                 fig1.add_trace(go.Scatter(x=axe_temps, y=t_pr, mode='lines', 
-                                          line=dict(color=colors[q_idx], width=1, dash='dash'), 
-                                          opacity=0.7, name=f'Trajectoire équivalente Prize Return ({labels[q_idx]})'))
+                                          line=dict(color=c, width=1, dash='dash'), 
+                                          opacity=0.7, name=f'PR équivalent ({label})',
+                                          legendgroup=label))
                 
         self._add_background_regimes_plotly(fig1, scenario)
         self._add_product_levels_plotly(fig1, product)
         
         fig1.update_layout(
-                           xaxis_title="Années", yaxis_title="Niveau de l'indice",
+                           xaxis_title="Années", yaxis_title="Sous PDI",
                            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
                            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
                            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
@@ -275,54 +256,38 @@ class SimulationEngine:
         fig2 = go.Figure()
         
         valeurs_finales_toutes_dec = traj_dec[:, -1]
-        mediane_generale_finale = np.median(valeurs_finales_toutes_dec)
-        idx_proche_mediane = np.argmin(np.abs(valeurs_finales_toutes_dec - mediane_generale_finale))
-        traj_proche_mediane = traj_dec[idx_proche_mediane]
+        pct_levels = [90, 75, 50, 25, 10]
+        colors_pct_map = {90: '#1a9850', 75: '#d9ef8b', 50: '#fee08b', 25: '#fc8d59', 10: '#d73027'}
         
-
-                                      
-        fig2.add_trace(go.Scatter(x=axe_temps, y=traj_proche_mediane, mode='lines', 
-                                  line=dict(color='black', width=3), 
-                                  name='Trajectoire (niveau final = médiane globale)'))
-                                  
-        colors_q = ['red', 'orange', 'olive', 'green']
-        
-        q25_all = np.percentile(valeurs_finales_toutes_dec, 25)
-        q50_all = np.percentile(valeurs_finales_toutes_dec, 50)
-        q75_all = np.percentile(valeurs_finales_toutes_dec, 75)
-        
-        def get_rep_all(mask):
-            if not np.any(mask): return None, None
-            med_dec = np.median(valeurs_finales_toutes_dec[mask])
-            indices_in_mask = np.where(mask)[0]
-            idx = indices_in_mask[np.argmin(np.abs(valeurs_finales_toutes_dec[indices_in_mask] - med_dec))]
-            return traj_pr[idx], traj_dec[idx]
+        max_y_display = 2000
+        for p in pct_levels:
+            val_cible = np.percentile(valeurs_finales_toutes_dec, p)
+            idx_closest = np.argmin(np.abs(valeurs_finales_toutes_dec - val_cible))
+            t_dec = traj_dec[idx_closest]
+            t_pr = traj_pr[idx_closest]
+            c = colors_pct_map[p]
             
-        reps_all = [
-            get_rep_all(valeurs_finales_toutes_dec <= q25_all),
-            get_rep_all((valeurs_finales_toutes_dec > q25_all) & (valeurs_finales_toutes_dec <= q50_all)),
-            get_rep_all((valeurs_finales_toutes_dec > q50_all) & (valeurs_finales_toutes_dec <= q75_all)),
-            get_rep_all(valeurs_finales_toutes_dec > q75_all)
-        ]
-
-        for i, rep in enumerate(reps_all):
-            if rep[0] is not None:
-                color = colors_q[i % len(colors_q)]
-                fig2.add_trace(go.Scatter(x=axe_temps, y=rep[1], mode='lines', 
-                                          line=dict(color=color, width=2.5), 
-                                          name=f'Médiane Globale Q{i+1} (Decrement)'))
-                fig2.add_trace(go.Scatter(x=axe_temps, y=rep[0], mode='lines', 
-                                          line=dict(color=color, width=2, dash='dot'), 
-                                          name=f'Trajectoire équivalente Prize Return (Q{i+1})'))
+            if p == 50:
+                max_y_display = max(2000, np.max(t_dec)*1.2)
+            
+            label = f"Top {p}%"
+            fig2.add_trace(go.Scatter(x=axe_temps, y=t_dec, mode='lines', 
+                                      line=dict(color=c, width=2.5), 
+                                      name=f'Dec ({label})',
+                                      legendgroup=label))
+            fig2.add_trace(go.Scatter(x=axe_temps, y=t_pr, mode='lines', 
+                                      line=dict(color=c, width=1.5, dash='dot'), 
+                                      name=f'PR équivalent ({label})',
+                                      legendgroup=label))
         
         self._add_background_regimes_plotly(fig2, scenario)
         self._add_product_levels_plotly(fig2, product)
         
         fig2.update_layout(
-                           xaxis_title="Années", yaxis_title="Niveau de l'indice Decrement",
-                           xaxis=dict(range=[0, scenario.annees]), yaxis=dict(range=[0, max(2000, np.max(traj_proche_mediane)*1.2)]),
+                           xaxis_title="Années", yaxis_title=None,
+                           xaxis=dict(range=[0, scenario.annees]), yaxis=dict(range=[0, max_y_display]),
                            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
-                           margin=dict(l=40, r=40, t=60, b=80))
+                           margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
                            
         return fig1, fig2
 
@@ -417,6 +382,75 @@ class SimulationEngine:
         )
 
         return fig
+
+    def plot_distributions(self, traj_pr, traj_dec, product, scenario):
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        import numpy as np
+        
+        # 1. Distribution des niveaux finaux (sans tenir compte des rappels)
+        # On plafonne à 5000 pour regrouper les valeurs extrêmes et on subdivise finement
+        valeurs_finales_dec = np.clip(traj_dec[:, -1], a_min=None, a_max=5000)
+        valeurs_finales_pr = np.clip(traj_pr[:, -1], a_min=None, a_max=5000)
+        
+        # Graphique Decrement
+        fig_dist_dec = go.Figure()
+        fig_dist_dec.add_trace(go.Histogram(x=valeurs_finales_dec, xbins=dict(start=0, end=5050, size=25), name="Decrement", marker_color='blue', opacity=0.75))
+        fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
+        tickvals_dist = list(range(0, 5001, 500))
+        ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
+
+        fig_dist_dec.update_layout(
+            title="Distribution des Niveaux Finaux (Decrement - Plafonné à 5000)",
+            xaxis_title="Niveau Final (pts)", 
+            yaxis_title="Nombre de trajectoires",
+            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
+        )
+        
+        # Graphique Price Return
+        fig_dist_pr = go.Figure()
+        fig_dist_pr.add_trace(go.Histogram(x=valeurs_finales_pr, xbins=dict(start=0, end=5050, size=25), name="Price Return", marker_color='orange', opacity=0.75))
+        fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
+        fig_dist_pr.update_layout(
+            title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
+            xaxis_title="Niveau Final (pts)", 
+            yaxis_title="Nombre de trajectoires",
+            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
+        )
+        
+        # 2. Distribution des dates de rappel
+        nb_trajectoires = traj_dec.shape[0]
+        date_rappel = np.full(nb_trajectoires, -1)
+        
+        jours_par_mois = scenario.jours_par_an // 12
+        jours_entre_observations = jours_par_mois * product.frequence_obs_mois
+        
+        est_rappele = np.zeros(nb_trajectoires, dtype=bool)
+        dates_possibles = []
+        
+        for t in range(1, scenario.total_jours + 1):
+            if (t % jours_entre_observations == 0) and (t >= jours_par_mois * product.non_call_period_mois):
+                dates_possibles.append(t)
+                nouveaux_rappels = (~est_rappele) & (traj_dec[:, t] >= product.barriere_rappel)
+                date_rappel[nouveaux_rappels] = t
+                est_rappele = est_rappele | nouveaux_rappels
+                
+        dates_rappel_valid = date_rappel[date_rappel > 0]
+        map_obs = {date: i+1 for i, date in enumerate(dates_possibles)}
+        obs_rappel = np.array([map_obs[d] for d in dates_rappel_valid])
+        
+        unique_obs, counts = np.unique(obs_rappel, return_counts=True)
+        
+        fig_dist_rappel = go.Figure()
+        fig_dist_rappel.add_trace(go.Bar(x=unique_obs, y=counts, name="Rappels", marker_color='green'))
+        
+        fig_dist_rappel.update_layout(
+            title="Distribution des Périodes de Rappel (Autocall)",
+            xaxis_title=f"Numéro d'observation (Fréquence : {product.frequence_obs_mois} mois)", 
+            yaxis_title="Nombre de trajectoires"
+        )
+        
+        return fig_dist_dec, fig_dist_pr, fig_dist_rappel
 
 if __name__ == "__main__":
     mes_regimes = [

@@ -115,8 +115,15 @@ if lancer:
                 with col_graphs:
                     st.subheader("Visualisations")
                     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
+                    fig_dist_dec, fig_dist_pr, fig_dist_rappel = moteur.plot_distributions(traj_pr, traj_dec, mon_autocall, scenario_krach)
+                    
                     st.plotly_chart(fig1, use_container_width=True)
                     st.plotly_chart(fig2, use_container_width=True)
+                    
+                    st.subheader("Distributions")
+                    st.plotly_chart(fig_dist_dec, use_container_width=True)
+                    st.plotly_chart(fig_dist_pr, use_container_width=True)
+                    st.plotly_chart(fig_dist_rappel, use_container_width=True)
                     
         else: # Analyse de Sensibilité
             spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
