@@ -395,7 +395,7 @@ class SimulationEngine:
         
         # Graphique Decrement
         fig_dist_dec = go.Figure()
-        fig_dist_dec.add_trace(go.Histogram(x=valeurs_finales_dec, xbins=dict(start=0, end=5050, size=25), name="Decrement", marker_color='blue', opacity=0.75))
+        fig_dist_dec.add_trace(go.Histogram(x=valeurs_finales_dec, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Decrement", marker_color='blue', opacity=0.75))
         fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
         tickvals_dist = list(range(0, 5001, 500))
         ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
@@ -409,7 +409,7 @@ class SimulationEngine:
         
         # Graphique Price Return
         fig_dist_pr = go.Figure()
-        fig_dist_pr.add_trace(go.Histogram(x=valeurs_finales_pr, xbins=dict(start=0, end=5050, size=25), name="Price Return", marker_color='orange', opacity=0.75))
+        fig_dist_pr.add_trace(go.Histogram(x=valeurs_finales_pr, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Price Return", marker_color='orange', opacity=0.75))
         fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
         fig_dist_pr.update_layout(
             title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
@@ -442,12 +442,13 @@ class SimulationEngine:
         unique_obs, counts = np.unique(obs_rappel, return_counts=True)
         
         fig_dist_rappel = go.Figure()
-        fig_dist_rappel.add_trace(go.Bar(x=unique_obs, y=counts, name="Rappels", marker_color='green'))
+        fig_dist_rappel.add_trace(go.Bar(x=unique_obs, y=counts, name="Rappels", marker_color='green', hovertemplate="%{y} trajectoires<extra></extra>"))
         
         fig_dist_rappel.update_layout(
             title="Distribution des Périodes de Rappel (Autocall)",
             xaxis_title=f"Numéro d'observation (Fréquence : {product.frequence_obs_mois} mois)", 
-            yaxis_title="Nombre de trajectoires"
+            yaxis_title="Nombre de trajectoires",
+            xaxis=dict(dtick=1)
         )
         
         return fig_dist_dec, fig_dist_pr, fig_dist_rappel
