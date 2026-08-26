@@ -66,6 +66,7 @@ with st.sidebar.expander("4. Produit Autocall", expanded=False):
     st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
     barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
     niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+    degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, help="Baisse en pourcentage du niveau initial à chaque constatation après la période de lock-up.")
     non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
     frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
 
@@ -94,7 +95,7 @@ if lancer:
                 niveau_pdi = niveau_initial * niveau_pdi_pct
                 
                 mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
-                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois))
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite))
                 
                 traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
@@ -143,7 +144,7 @@ if lancer:
                 pdi_niveau_dyn = spot * niveau_pdi_pct
                 barriere_rappel = spot * barriere_rappel_pct
                 
-                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois))
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite))
                 
                 # Réinitialiser la seed à chaque boucle pour que les courbes de sensibilité soient très lisses
                 moteur.seed = int(seed)

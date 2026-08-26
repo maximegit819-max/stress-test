@@ -121,21 +121,27 @@ class DecrementIndex:
 
 class AutocallProduct:
     """Modélise le produit structuré et ses règles de marché"""
-    def __init__(self, barriere_rappel=1000.0, niveau_pdi=500.0, non_call_period_mois=11, frequence_obs_mois=4):
+    def __init__(self, barriere_rappel=1000.0, niveau_pdi=500.0, non_call_period_mois=11, frequence_obs_mois=4, degressivite=0.0):
         self.barriere_rappel = barriere_rappel
         self.niveau_pdi = niveau_pdi
         self.non_call_period_mois = non_call_period_mois
         self.frequence_obs_mois = frequence_obs_mois
+        self.degressivite = degressivite
         
     def evaluate(self, trajectoires_dec, scenario: MarketScenario, nb_trajectoires):
         est_rappele = np.zeros(nb_trajectoires, dtype=bool)
         jours_par_mois = scenario.jours_par_an // 12
         jours_entre_observations = jours_par_mois * self.frequence_obs_mois
         
+        baisse_en_points = self.barriere_rappel * (self.degressivite / 100.0)
+        nb_observations_passees = 0
+        
         for t in range(1, scenario.total_jours + 1):
             if (t % jours_entre_observations == 0) and (t >= jours_par_mois * self.non_call_period_mois):
-                nouveaux_rappels = (~est_rappele) & (trajectoires_dec[:, t] >= self.barriere_rappel)
+                barriere_actuelle = self.barriere_rappel - (nb_observations_passees * baisse_en_points)
+                nouveaux_rappels = (~est_rappele) & (trajectoires_dec[:, t] >= barriere_actuelle)
                 est_rappele = est_rappele | nouveaux_rappels
+                nb_observations_passees += 1
                 
         return est_rappele
 
@@ -206,12 +212,47 @@ class SimulationEngine:
                                text=f"Période {i+1}<br>Drift: {regime['r_perf']*100:+.0f}%<br>Vol: {regime['vol']*100:.0f}%<br>Yield Div: {regime['yield_initial']*100:.1f}%",
                                showarrow=False, bgcolor="rgba(255,255,255,0.8)", bordercolor="lightgray")
 
-    def _add_product_levels_plotly(self, fig, product):
+    def _add_product_levels_plotly(self, fig, product, scenario):
         """Ajoute les barrières du produit Autocall pour Plotly"""
         fig.add_hline(y=product.niveau_pdi, line_dash="dash", line_color="red", line_width=2,
-                      annotation_text=f"PDI ({product.niveau_pdi} pts)", annotation_position="bottom right")
-        fig.add_hline(y=product.barriere_rappel, line_dash="dashdot", line_color="purple", line_width=2,
-                      annotation_text=f"Rappel ({product.barriere_rappel} pts)", annotation_position="top right")
+                      annotation_text=f"PDI ({product.niveau_pdi:.0f} pts)", annotation_position="bottom right")
+        
+        if product.degressivite == 0.0:
+            fig.add_hline(y=product.barriere_rappel, line_dash="dashdot", line_color="purple", line_width=2,
+                          annotation_text=f"Rappel ({product.barriere_rappel:.0f} pts)", annotation_position="top right")
+        else:
+            import plotly.graph_objects as go
+            jours_par_mois = scenario.jours_par_an // 12
+            jours_entre_observations = jours_par_mois * product.frequence_obs_mois
+            baisse_en_points = product.barriere_rappel * (product.degressivite / 100.0)
+            
+            x_barriere = [0]
+            y_barriere = [product.barriere_rappel]
+            
+            nb_observations_passees = 0
+            
+            for t in range(1, scenario.total_jours + 1):
+                if (t % jours_entre_observations == 0) and (t >= jours_par_mois * product.non_call_period_mois):
+                    annee = t / scenario.jours_par_an
+                    
+                    # Fin de la marche actuelle
+                    barriere_actuelle = product.barriere_rappel - (nb_observations_passees * baisse_en_points)
+                    x_barriere.append(annee)
+                    y_barriere.append(barriere_actuelle)
+                    
+                    # Début de la marche suivante
+                    nb_observations_passees += 1
+                    barriere_prochaine = product.barriere_rappel - (nb_observations_passees * baisse_en_points)
+                    x_barriere.append(annee)
+                    y_barriere.append(barriere_prochaine)
+                    
+            # Dernière marche jusqu'à la fin
+            x_barriere.append(scenario.annees)
+            y_barriere.append(product.barriere_rappel - (nb_observations_passees * baisse_en_points))
+            
+            fig.add_trace(go.Scatter(x=x_barriere, y=y_barriere, mode='lines', 
+                                     line=dict(color='purple', width=2, dash='dashdot'), 
+                                     name=f'Rappel Dégressif (-{product.degressivite}%/obs)', showlegend=False))
 
     def plot_results(self, nom_scenario, traj_pr, traj_dec, reps_scen, product, scenario, index):
         """Génère et affiche les graphiques interactifs Plotly"""
@@ -242,7 +283,7 @@ class SimulationEngine:
                                           legendgroup=label))
                 
         self._add_background_regimes_plotly(fig1, scenario)
-        self._add_product_levels_plotly(fig1, product)
+        self._add_product_levels_plotly(fig1, product, scenario)
         
         fig1.update_layout(
                            xaxis_title="Années", yaxis_title="Sous PDI",
@@ -281,7 +322,7 @@ class SimulationEngine:
                                       legendgroup=label))
         
         self._add_background_regimes_plotly(fig2, scenario)
-        self._add_product_levels_plotly(fig2, product)
+        self._add_product_levels_plotly(fig2, product, scenario)
         
         fig2.update_layout(
                            xaxis_title="Années", yaxis_title=None,
@@ -463,7 +504,7 @@ if __name__ == "__main__":
     scenario_krach = MarketScenario(config_regimes=mes_regimes, annees=10, jours_par_an=252)
     mon_indice_dec = DecrementIndex(niveau_initial=1000.0, decrement_annuel=50.0)
     pdi_pts = mon_indice_dec.niveau_initial * 0.50
-    mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4)
+    mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4, degressivite=1.0)
     
     moteur = SimulationEngine(nb_trajectoires=10000,seed=42)
     traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
