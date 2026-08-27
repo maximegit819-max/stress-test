@@ -102,7 +102,7 @@ if lancer:
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
                     nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
-                    reps_scen = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
                 stats_text = f.getvalue()
                 
                 st.success(f"Simulation terminée avec succès !")
@@ -117,10 +117,18 @@ if lancer:
                     st.subheader("Visualisations")
                     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
                     fig_dist_dec, fig_dist_pr, fig_dist_rappel = moteur.plot_distributions(traj_pr, traj_dec, mon_autocall, scenario_krach)
+                    if len(bin_stats) > 0:
+                        fig_binned = moteur.plot_binned_averages(bin_stats)
+                    else:
+                        fig_binned = None
                     
                     st.plotly_chart(fig1, use_container_width=True)
                     st.plotly_chart(fig2, use_container_width=True)
                     
+                    if fig_binned:
+                        st.subheader("Analyse par Tranches (Sous PDI)")
+                        st.plotly_chart(fig_binned, use_container_width=True)
+                        
                     st.subheader("Distributions")
                     st.plotly_chart(fig_dist_dec, use_container_width=True)
                     st.plotly_chart(fig_dist_pr, use_container_width=True)

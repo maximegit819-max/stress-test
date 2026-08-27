@@ -177,6 +177,7 @@ class SimulationEngine:
         print(f"\n#### À MATURITÉ (Année {scenario.annees}) :")
         print(f"- **Pourcentage de fois où l'indice Decrement finit en dessous du PDI** : {pct_en_dessous:.2f}%")
         
+        bin_stats = []
         if np.any(en_dessous_pdi):
             moy_dec_en_dessous = np.mean(valeurs_finales_dec[en_dessous_pdi])
             moy_pr_en_dessous = np.mean(valeurs_finales_pr[en_dessous_pdi])
@@ -186,10 +187,30 @@ class SimulationEngine:
             dec_sous_pdi = valeurs_finales_dec[en_dessous_pdi]
             pr_sous_pdi = valeurs_finales_pr[en_dessous_pdi]
             
+            bins = [0, 10, 25, 50, 75, 90, 100]
+            print("**Moyennes par tranches de centiles (sur les trajectoires sous le PDI)**")
+            for i in range(len(bins)-1):
+                p_low = bins[i]
+                p_high = bins[i+1]
+                val_high = np.percentile(dec_sous_pdi, p_high)
+                
+                if p_low == 0:
+                    mask = dec_sous_pdi <= val_high
+                else:
+                    val_low = np.percentile(dec_sous_pdi, p_low)
+                    mask = (dec_sous_pdi > val_low) & (dec_sous_pdi <= val_high)
+                
+                if np.any(mask):
+                    moy_dec = np.mean(dec_sous_pdi[mask])
+                    moy_pr = np.mean(pr_sous_pdi[mask])
+                    label = f"{p_low}%-{p_high}%"
+                    bin_stats.append({"label": label, "moy_dec": moy_dec, "moy_pr": moy_pr})
+                    print(f"- Tranche [{label}] : Moyenne Decrement = {moy_dec:.2f} pts | Moyenne PR = {moy_pr:.2f} pts")
+            
             pct_levels = [10, 25, 50, 75, 90]
             pct_values = [np.percentile(dec_sous_pdi, p) for p in pct_levels]
             
-            print("**Analyse par centiles (sur les trajectoires sous le PDI)**")
+            print("\n**Trajectoires représentatives (Analyse par centiles)**")
             
             for p, val in zip(pct_levels, pct_values):
                 idx = np.argmin(np.abs(dec_sous_pdi - val))
@@ -200,7 +221,7 @@ class SimulationEngine:
         else:
             print("- Aucun scénario ne finit en dessous du PDI à maturité.")
             
-        return reps
+        return reps, bin_stats
 
     def _add_background_regimes_plotly(self, fig, scenario):
         """Ajoute les bandes de couleurs et les infos des périodes pour Plotly"""
@@ -494,6 +515,34 @@ class SimulationEngine:
         
         return fig_dist_dec, fig_dist_pr, fig_dist_rappel
 
+    def plot_binned_averages(self, bin_stats):
+        import plotly.graph_objects as go
+        
+        labels = [b['label'] for b in bin_stats]
+        dec_vals = [b['moy_dec'] for b in bin_stats]
+        pr_vals = [b['moy_pr'] for b in bin_stats]
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=labels, y=dec_vals,
+            name='Decrement', marker_color='blue'
+        ))
+        fig.add_trace(go.Bar(
+            x=labels, y=pr_vals,
+            name='Price Return', marker_color='orange'
+        ))
+        
+        fig.update_layout(
+            title="Niveaux Moyens par Tranches de Centiles (Sous PDI)",
+            xaxis_title="Tranches de Centiles",
+            yaxis_title="Niveau Final Moyen (pts)",
+            barmode='group',
+            plot_bgcolor='white',
+            hovermode="x unified"
+        )
+        
+        return fig
+
 if __name__ == "__main__":
     mes_regimes = [
         {"duree_annees": 3, "r_perf": 0.04, "vol": 0.15, "yield_initial": 0.03, "croiss_div": 0.04},
@@ -510,8 +559,11 @@ if __name__ == "__main__":
     traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
     
     nom_scenario = f"Scénario N-Périodes Test"
-    reps_scen = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
     
     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
     fig1.show()
     fig2.show()
+    if bin_stats:
+        fig_binned = moteur.plot_binned_averages(bin_stats)
+        fig_binned.show()
