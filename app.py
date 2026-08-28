@@ -190,7 +190,7 @@ if lancer:
             
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
-            fig_prob, fig_niveaux = moteur.plot_sensibilite(
+            fig_prob, fig_niveaux, fig_ecart = moteur.plot_sensibilite(
                 spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, 
                 decrement_annuel, yield_fixe, mes_regimes_input
             )
@@ -201,6 +201,7 @@ if lancer:
             
             st.plotly_chart(fig_prob, use_container_width=True)
             st.plotly_chart(fig_niveaux, use_container_width=True)
+            st.plotly_chart(fig_ecart, use_container_width=True)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")

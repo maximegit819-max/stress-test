@@ -355,7 +355,23 @@ class SimulationEngine:
 
     def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, decrement_annuel, yield_fixe, mes_regimes):
         import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
         import numpy as np
+        
+        spots_array = np.array(spots_test)
+        
+        # --- Calculs Mathématiques ---
+        # 1. Écart de sur-perte
+        ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
+        
+        # 2. Dérivées Secondes (Accélération du risque)
+        # On utilise np.gradient pour la dérivée numérique
+        d1_prob = np.gradient(probs_pdi_dec, spots_array)
+        d2_prob = np.gradient(d1_prob, spots_array)
+        
+        # Pour l'écart, il peut y avoir des NaNs s'il n'y a pas de crash, np.gradient les gère (retourne NaN)
+        d1_ecart = np.gradient(ecarts, spots_array)
+        d2_ecart = np.gradient(d1_ecart, spots_array)
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
@@ -369,33 +385,37 @@ class SimulationEngine:
             annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Div In. {regime['yield_initial']*100:.1f}%, Croiss. {regime['croiss_div']*100:+.1f}%<br>"
 
         # ==========================================
-        # GRAPHIQUE 1 : Probabilités
+        # GRAPHIQUE 1 : Probabilités + Accélération (D2)
         # ==========================================
-        fig_prob = go.Figure()
+        fig_prob = make_subplots(specs=[[{"secondary_y": True}]])
 
         fig_prob.add_trace(
             go.Scatter(x=spots_test, y=probs_pdi_dec, mode='lines+markers',
-                       name='Probabilité de toucher le PDI (Dec)',
-                       line=dict(color='orange', width=2),
-                       marker=dict(size=6))
+                       name='Probabilité PDI (Dec)',
+                       line=dict(color='orange', width=2), marker=dict(size=6)),
+            secondary_y=False
         )
-
         fig_prob.add_trace(
             go.Scatter(x=spots_test, y=probs_rappel, mode='lines+markers',
-                       name='Probabilité de Rappel (Autocall)',
-                       line=dict(color='green', width=2),
-                       marker=dict(symbol='diamond', size=6))
+                       name='Probabilité Autocall',
+                       line=dict(color='green', width=2), marker=dict(symbol='diamond', size=6)),
+            secondary_y=False
+        )
+        # Dérivée Seconde
+        fig_prob.add_trace(
+            go.Scatter(x=spots_test, y=d2_prob, mode='lines',
+                       name='Accélération du Risque (Dérivée 2nde)',
+                       line=dict(color='orange', width=0), fill='tozeroy', opacity=0.15),
+            secondary_y=True
         )
 
-        fig_prob.add_annotation(
-            text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",
-            bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray")
-        )
+        fig_prob.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_prob.update_layout(
-            title=dict(text=f"<b>Sensibilité au Spot Initial (Dividende initial fixé à {yield_fixe*100:.1f}%) : Probabilités</b>", font=dict(size=18)),
+            title=dict(text=f"<b>1. Probabilités & Accélération du Risque PDI</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Probabilités (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
+            yaxis2=dict(title="Accélération du Risque", showgrid=False, showticklabels=False), # Masquer l'échelle D2 car elle est abstraite
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
         )
@@ -408,31 +428,55 @@ class SimulationEngine:
         fig_niveaux.add_trace(
             go.Scatter(x=spots_test, y=moyennes_dec_crash, mode='lines+markers',
                        name='Niveau moyen Decrement (% du Spot)',
-                       line=dict(color='orange', width=2, dash='dash'),
-                       marker=dict(symbol='circle', size=6))
+                       line=dict(color='orange', width=2, dash='dash'), marker=dict(symbol='circle', size=6))
         )
-
         fig_niveaux.add_trace(
             go.Scatter(x=spots_test, y=moyennes_pr_crash, mode='lines+markers',
                        name='Niveau moyen Price Return (% du Spot)',
-                       line=dict(color='blue', width=2, dash='dot'),
-                       marker=dict(symbol='square', size=6))
+                       line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='square', size=6))
         )
 
-        fig_niveaux.add_annotation(
-            text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",
-            bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray")
-        )
+        fig_niveaux.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_niveaux.update_layout(
-            title=dict(text=f"<b>Niveau Final Moyen en cas de Krach (Sous PDI et non rappelé)</b>", font=dict(size=18)),
+            title=dict(text=f"<b>2. Niveaux Finaux Moyens en cas de Krach</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Niveau Final (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
         )
 
-        return fig_prob, fig_niveaux
+        # ==========================================
+        # GRAPHIQUE 3 : Sur-perte & Dérivée Seconde
+        # ==========================================
+        fig_ecart = make_subplots(specs=[[{"secondary_y": True}]])
+
+        fig_ecart.add_trace(
+            go.Scatter(x=spots_test, y=ecarts, mode='lines+markers',
+                       name='Sur-perte (Écart PR - Dec)',
+                       line=dict(color='red', width=2), marker=dict(symbol='x', size=6)),
+            secondary_y=False
+        )
+        # Dérivée Seconde de l'écart
+        fig_ecart.add_trace(
+            go.Scatter(x=spots_test, y=d2_ecart, mode='lines',
+                       name='Accélération de la Sur-perte',
+                       line=dict(color='red', width=0), fill='tozeroy', opacity=0.15),
+            secondary_y=True
+        )
+
+        fig_ecart.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
+
+        fig_ecart.update_layout(
+            title=dict(text=f"<b>3. Sur-perte du Decrement & Accélération</b>", font=dict(size=18)),
+            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            yaxis=dict(title="Sur-perte (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
+            yaxis2=dict(title="Accélération", showgrid=False, showticklabels=False), # Échelle masquée
+            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
+            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
+        )
+
+        return fig_prob, fig_niveaux, fig_ecart
 
     def plot_distributions(self, traj_pr, traj_dec, product, scenario):
         import plotly.graph_objects as go

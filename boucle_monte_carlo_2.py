@@ -88,12 +88,13 @@ def main():
     # VISUALISATION PLOTLY
     # ==========================================
     dummy_moteur = SimulationEngine()
-    fig_prob, fig_niveaux = dummy_moteur.plot_sensibilite(
+    fig_prob, fig_niveaux, fig_ecart = dummy_moteur.plot_sensibilite(
         spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, 
         decrement_annuel, yield_fixe, mes_regimes
     )
     fig_prob.show()
     fig_niveaux.show()
+    fig_ecart.show()
 
 if __name__ == "__main__":
     main()
