@@ -140,7 +140,8 @@ if lancer:
             probs_pdi_dec = []
             probs_pdi_pr = []
             probs_rappel = []
-            ecarts_finaux_crash = []
+            moyennes_dec_crash = []
+            moyennes_pr_crash = []
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -173,11 +174,12 @@ if lancer:
                 if np.any(en_dessous_pdi_dec):
                     moy_pr_crash_pct = (np.mean(valeurs_finales_pr[en_dessous_pdi_dec]) / spot) * 100
                     moy_dec_crash_pct = (np.mean(valeurs_finales_dec[en_dessous_pdi_dec]) / spot) * 100
-                    ecart_final_pct = moy_pr_crash_pct - moy_dec_crash_pct
                 else:
-                    ecart_final_pct = np.nan
+                    moy_pr_crash_pct = np.nan
+                    moy_dec_crash_pct = np.nan
                     
-                ecarts_finaux_crash.append(ecart_final_pct)
+                moyennes_pr_crash.append(moy_pr_crash_pct)
+                moyennes_dec_crash.append(moy_dec_crash_pct)
                 
                 del traj_pr, traj_dec, est_rappele, mon_indice_dec, mon_autocall
                 gc.collect()
@@ -188,8 +190,8 @@ if lancer:
             
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
-            fig_sensibilite = moteur.plot_sensibilite(
-                spots_test, probs_pdi_dec, probs_rappel, ecarts_finaux_crash, 
+            fig_prob, fig_niveaux = moteur.plot_sensibilite(
+                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, 
                 decrement_annuel, yield_fixe, mes_regimes_input
             )
             
@@ -197,7 +199,8 @@ if lancer:
             progress_bar.empty()
             status_text.empty()
             
-            st.plotly_chart(fig_sensibilite, use_container_width=True)
+            st.plotly_chart(fig_prob, use_container_width=True)
+            st.plotly_chart(fig_niveaux, use_container_width=True)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")

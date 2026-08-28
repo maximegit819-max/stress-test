@@ -353,8 +353,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, ecarts_finaux_crash, decrement_annuel, yield_fixe, mes_regimes):
-        from plotly.subplots import make_subplots
+    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, decrement_annuel, yield_fixe, mes_regimes):
         import plotly.graph_objects as go
         import numpy as np
         
@@ -367,83 +366,83 @@ class SimulationEngine:
             ecart = (yield_fixe * 100) - breakeven_y
             x_tick_text.append(f"{ecart:+.1f}%<br>({t:.0f} pts)")
 
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-        fig.add_trace(
-            go.Scatter(x=spots_test, y=probs_pdi_dec, mode='lines+markers',
-                       name='Probabilité de toucher le PDI',
-                       line=dict(color='orange', width=2),
-                       marker=dict(size=6)),
-            secondary_y=False,
-        )
-
-        fig.add_trace(
-            go.Scatter(x=spots_test, y=probs_rappel, mode='lines+markers',
-                       name='Probabilité de Rappel (Autocall)',
-                       line=dict(color='green', width=2),
-                       marker=dict(symbol='diamond', size=6)),
-            secondary_y=False,
-        )
-
-        fig.add_trace(
-            go.Scatter(x=spots_test, y=ecarts_finaux_crash, mode='lines+markers',
-                       name='Sur-perte du Decrement (Moy PR - Moy Dec)',
-                       line=dict(color='red', width=2, dash='dash'),
-                       marker=dict(symbol='x', size=8)),
-            secondary_y=True,
-        )
-
-        fig.add_vline(x=spot_breakeven, line_dash="dash", line_color="black", line_width=2,
-                      annotation_text=f"Breakeven (Spot = {spot_breakeven:.0f} pts)", 
-                      annotation_position="top right")
-
         annotation_text = "<b>Hypothèses de Marché</b><br>"
         for i, regime in enumerate(mes_regimes):
             annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Div In. {regime['yield_initial']*100:.1f}%, Croiss. {regime['croiss_div']*100:+.1f}%<br>"
-            
-        fig.add_annotation(
-            text=annotation_text,
-            xref="paper", yref="paper",
-            x=0.0, y=-0.35,
-            showarrow=False,
-            align="left",
-            bgcolor="rgba(255, 255, 255, 0.85)",
-            bordercolor="lightgray",
-            borderwidth=1,
-            font=dict(size=10, color="gray")
+
+        # ==========================================
+        # GRAPHIQUE 1 : Probabilités
+        # ==========================================
+        fig_prob = go.Figure()
+
+        fig_prob.add_trace(
+            go.Scatter(x=spots_test, y=probs_pdi_dec, mode='lines+markers',
+                       name='Probabilité de toucher le PDI (Dec)',
+                       line=dict(color='orange', width=2),
+                       marker=dict(size=6))
         )
 
-        fig.update_layout(
-            title=dict(text=f"<b>Sensibilité au Spot Initial (Dividende initial fixé à {yield_fixe*100:.1f}%) : Probabilité PDI</b>", font=dict(size=18)),
-            xaxis=dict(
-                title="Écart de Dividende Initial (Niveau du Spot Initial)",
-                tickvals=x_tick_vals,
-                ticktext=x_tick_text,
-                showgrid=True,
-                gridcolor='lightgray',
-                gridwidth=1
-            ),
-            yaxis=dict(
-                title="Probabilités (Toucher PDI / Rappel) (%)",
-                rangemode='tozero',
-                showgrid=True,
-                gridcolor='lightgray',
-                gridwidth=1
-            ),
-            yaxis2=dict(
-                title=dict(text="Sur-perte du Decrement (% du Spot initial)", font=dict(color="red")),
-                tickfont=dict(color="red"),
-                rangemode='tozero',
-                showgrid=False
-            ),
+        fig_prob.add_trace(
+            go.Scatter(x=spots_test, y=probs_rappel, mode='lines+markers',
+                       name='Probabilité de Rappel (Autocall)',
+                       line=dict(color='green', width=2),
+                       marker=dict(symbol='diamond', size=6))
+        )
+
+        fig_prob.add_vline(x=spot_breakeven, line_dash="dash", line_color="black", line_width=2,
+                      annotation_text=f"Breakeven (Spot = {spot_breakeven:.0f} pts)", 
+                      annotation_position="top right")
+
+        fig_prob.add_annotation(
+            text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",
+            bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray")
+        )
+
+        fig_prob.update_layout(
+            title=dict(text=f"<b>Sensibilité au Spot Initial (Dividende initial fixé à {yield_fixe*100:.1f}%) : Probabilités</b>", font=dict(size=18)),
+            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            yaxis=dict(title="Probabilités (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white',
-            hovermode="x unified",
-            margin=dict(b=250),
-            height=700
+            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
         )
 
-        return fig
+        # ==========================================
+        # GRAPHIQUE 2 : Niveaux Finaux sous PDI
+        # ==========================================
+        fig_niveaux = go.Figure()
+
+        fig_niveaux.add_trace(
+            go.Scatter(x=spots_test, y=moyennes_dec_crash, mode='lines+markers',
+                       name='Niveau moyen Decrement (% du Spot)',
+                       line=dict(color='orange', width=2, dash='dash'),
+                       marker=dict(symbol='circle', size=6))
+        )
+
+        fig_niveaux.add_trace(
+            go.Scatter(x=spots_test, y=moyennes_pr_crash, mode='lines+markers',
+                       name='Niveau moyen Price Return (% du Spot)',
+                       line=dict(color='blue', width=2, dash='dot'),
+                       marker=dict(symbol='square', size=6))
+        )
+
+        fig_niveaux.add_vline(x=spot_breakeven, line_dash="dash", line_color="black", line_width=2,
+                      annotation_text=f"Breakeven (Spot = {spot_breakeven:.0f} pts)", 
+                      annotation_position="top right")
+
+        fig_niveaux.add_annotation(
+            text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",
+            bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray")
+        )
+
+        fig_niveaux.update_layout(
+            title=dict(text=f"<b>Niveau Final Moyen en cas de Krach (Sous PDI et non rappelé)</b>", font=dict(size=18)),
+            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            yaxis=dict(title="Niveau Final (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
+            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
+            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
+        )
+
+        return fig_prob, fig_niveaux
 
     def plot_distributions(self, traj_pr, traj_dec, product, scenario):
         import plotly.graph_objects as go
