@@ -356,6 +356,8 @@ class SimulationEngine:
     def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, decrement_annuel, yield_fixe, mes_regimes):
         import plotly.graph_objects as go
         import numpy as np
+        
+        spot_breakeven = decrement_annuel / yield_fixe
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
@@ -386,6 +388,10 @@ class SimulationEngine:
                        line=dict(color='green', width=2),
                        marker=dict(symbol='diamond', size=6))
         )
+
+        fig_prob.add_vline(x=spot_breakeven, line_dash="dash", line_color="black", line_width=2,
+                      annotation_text=f"Breakeven (Spot = {spot_breakeven:.0f} pts)", 
+                      annotation_position="top right")
 
         fig_prob.add_annotation(
             text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",
@@ -418,6 +424,10 @@ class SimulationEngine:
                        line=dict(color='blue', width=2, dash='dot'),
                        marker=dict(symbol='square', size=6))
         )
+
+        fig_niveaux.add_vline(x=spot_breakeven, line_dash="dash", line_color="black", line_width=2,
+                      annotation_text=f"Breakeven (Spot = {spot_breakeven:.0f} pts)", 
+                      annotation_position="top right")
 
         fig_niveaux.add_annotation(
             text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left",

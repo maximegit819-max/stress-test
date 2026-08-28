@@ -30,25 +30,25 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
     for i in range(int(nb_periodes)):
         st.markdown(f"**Période {i+1}**")
         def_d = 3 if i==0 else (2 if i==1 else 5)
-        def_rp = 4.0 if i==0 else (-15.0 if i==1 else 5.0)
-        def_vol = 15.0 if i==0 else (35.0 if i==1 else 18.0)
-        def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
-        def_cd = 4.0 if i==0 else (0.0 if i==1 else 5.0)
+        def_rp = 0.04 if i==0 else (-0.15 if i==1 else 0.05)
+        def_vol = 0.15 if i==0 else (0.35 if i==1 else 0.18)
+        def_yi = 0.03 if i==0 else (0.01 if i==1 else 0.04)
+        def_cd = 0.04 if i==0 else (0.0 if i==1 else 0.05)
         
         d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_{i}")
-        rp = st.number_input(f"Drift P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_{i}")
-        vol = st.number_input(f"Volatilité P{i+1} (%)", value=def_vol, format="%.1f", key=f"vol_{i}")
-        yi = st.number_input(f"Yield Initial P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_{i}")
-        cd = st.number_input(f"Croissance Div P{i+1} (%)", value=def_cd, format="%.1f", key=f"cd_{i}")
+        rp = st.number_input(f"Drift P{i+1}", value=def_rp, format="%.3f", key=f"rp_{i}")
+        vol = st.number_input(f"Volatilité P{i+1}", value=def_vol, format="%.3f", key=f"vol_{i}")
+        yi = st.number_input(f"Yield Initial P{i+1}", value=def_yi, format="%.4f", key=f"yi_{i}")
+        cd = st.number_input(f"Croissance Div P{i+1}", value=def_cd, format="%.3f", key=f"cd_{i}")
         st.divider()
         
         somme_annees += d
         mes_regimes_input.append({
             "duree_annees": d,
-            "r_perf": rp / 100.0,
-            "vol": vol / 100.0,
-            "yield_initial": yi / 100.0,
-            "croiss_div": cd / 100.0
+            "r_perf": rp,
+            "vol": vol,
+            "yield_initial": yi,
+            "croiss_div": cd
         })
 
 with st.sidebar.expander("3. Indice Decrement", expanded=(mode == "Scénario Fixe")):
