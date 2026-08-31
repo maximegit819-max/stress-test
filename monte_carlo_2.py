@@ -336,10 +336,10 @@ class SimulationEngine:
         # 2. Dérivées Secondes (Accélération du risque) via Savitzky-Golay
         # Ce filtre calcule directement la dérivée (deriv=2) en ajustant un polynôme local (polyorder=3)
         # sur une fenêtre glissante (window_length=11). C'est parfait pour éliminer le bruit Monte Carlo.
-        d2_prob = savgol_filter(probs_pdi_dec, window_length=11, polyorder=3, deriv=2, delta=delta_spot)
+        d2_prob = savgol_filter(probs_pdi_dec, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
         
         # Pour l'écart (Sur-perte)
-        d2_ecart = savgol_filter(ecarts, window_length=11, polyorder=3, deriv=2, delta=delta_spot)
+        d2_ecart = savgol_filter(ecarts, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
