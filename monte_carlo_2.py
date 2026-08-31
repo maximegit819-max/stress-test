@@ -328,23 +328,18 @@ class SimulationEngine:
         # 1. Écart de sur-perte
         ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
         
-        # 2. Dérivées Secondes (Accélération du risque)
-        # On utilise np.gradient pour la dérivée numérique
-        d1_prob = np.gradient(probs_pdi_dec, spots_array)
-        d2_prob = np.gradient(d1_prob, spots_array)
+        from scipy.signal import savgol_filter
         
-        # Pour l'écart, il peut y avoir des NaNs s'il n'y a pas de crash, np.gradient les gère
-        d1_ecart = np.gradient(ecarts, spots_array)
-        d2_ecart_brut = np.gradient(d1_ecart, spots_array)
+        # L'écart entre deux spots (ici 50) pour avoir la bonne échelle de dérivée
+        delta_spot = spots_array[1] - spots_array[0]
+
+        # 2. Dérivées Secondes (Accélération du risque) via Savitzky-Golay
+        # Ce filtre calcule directement la dérivée (deriv=2) en ajustant un polynôme local (polyorder=3)
+        # sur une fenêtre glissante (window_length=11). C'est parfait pour éliminer le bruit Monte Carlo.
+        d2_prob = savgol_filter(probs_pdi_dec, window_length=11, polyorder=3, deriv=2, delta=delta_spot)
         
-        # Lissage de la dérivée seconde pour éliminer le bruit numérique (dent de scie) du Monte Carlo
-        # On utilise une moyenne mobile simple (convolution) sur une fenêtre de 3 points
-        kernel_size = 3
-        kernel = np.ones(kernel_size) / kernel_size
-        d2_ecart = np.convolve(d2_ecart_brut, kernel, mode='same')
-        # On rétablit les extrémités qui sont faussées par le mode 'same'
-        d2_ecart[0] = d2_ecart_brut[0]
-        d2_ecart[-1] = d2_ecart_brut[-1]
+        # Pour l'écart (Sur-perte)
+        d2_ecart = savgol_filter(ecarts, window_length=11, polyorder=3, deriv=2, delta=delta_spot)
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
