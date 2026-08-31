@@ -346,7 +346,7 @@ class SimulationEngine:
 
         annotation_text = "<b>Hypothèses de Marché</b><br>"
         for i, regime in enumerate(mes_regimes):
-            annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Div In. {regime['yield_initial']*100:.1f}%, Croiss. {regime['croiss_div']*100:+.1f}%<br>"
+            annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Yield {regime['yield_initial']*100:.1f}%<br>"
 
         # ==========================================
         # GRAPHIQUE 1 : Probabilités + Accélération (D2)
@@ -541,9 +541,9 @@ class SimulationEngine:
 
 if __name__ == "__main__":
     mes_regimes = [
-        {"duree_annees": 3, "r_perf": 0.04, "vol": 0.15, "yield_initial": 0.03, "croiss_div": 0.04},
-        {"duree_annees": 2, "r_perf": -0.15, "vol": 0.35, "yield_initial": 0.01, "croiss_div": 0.0},
-        {"duree_annees": 5, "r_perf": 0.05, "vol": 0.18, "yield_initial": 0.04, "croiss_div": 0.05}
+        {"duree_annees": 3, "r_perf": 0.04, "vol": 0.15, "yield_initial": 0.03},
+        {"duree_annees": 2, "r_perf": -0.15, "vol": 0.35, "yield_initial": 0.01},
+        {"duree_annees": 5, "r_perf": 0.05, "vol": 0.18, "yield_initial": 0.04}
     ]
     
     scenario_krach = MarketScenario(config_regimes=mes_regimes, annees=10, jours_par_an=252)
