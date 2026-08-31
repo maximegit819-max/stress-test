@@ -333,9 +333,18 @@ class SimulationEngine:
         d1_prob = np.gradient(probs_pdi_dec, spots_array)
         d2_prob = np.gradient(d1_prob, spots_array)
         
-        # Pour l'écart, il peut y avoir des NaNs s'il n'y a pas de crash, np.gradient les gère (retourne NaN)
+        # Pour l'écart, il peut y avoir des NaNs s'il n'y a pas de crash, np.gradient les gère
         d1_ecart = np.gradient(ecarts, spots_array)
-        d2_ecart = np.gradient(d1_ecart, spots_array)
+        d2_ecart_brut = np.gradient(d1_ecart, spots_array)
+        
+        # Lissage de la dérivée seconde pour éliminer le bruit numérique (dent de scie) du Monte Carlo
+        # On utilise une moyenne mobile simple (convolution) sur une fenêtre de 3 points
+        kernel_size = 3
+        kernel = np.ones(kernel_size) / kernel_size
+        d2_ecart = np.convolve(d2_ecart_brut, kernel, mode='same')
+        # On rétablit les extrémités qui sont faussées par le mode 'same'
+        d2_ecart[0] = d2_ecart_brut[0]
+        d2_ecart[-1] = d2_ecart_brut[-1]
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
