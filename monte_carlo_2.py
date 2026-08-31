@@ -25,6 +25,7 @@ class MarketScenario:
 
         self.r_perf_dyn = np.zeros(self.total_jours)
         self.vol_dyn = np.zeros(self.total_jours)
+        self.yield_dyn = np.zeros(self.total_jours)
         
         self.build_regimes()
         
@@ -35,31 +36,8 @@ class MarketScenario:
             if j_deb < self.total_jours:
                 self.r_perf_dyn[j_deb:j_fin] = regime["r_perf"]
                 self.vol_dyn[j_deb:j_fin] = regime["vol"]
+                self.yield_dyn[j_deb:j_fin] = regime["yield_initial"]
                 
-    def get_cash_dividend(self, t, niveau_initial, spots_debut_periode):
-        annee_prec = (t - 1) // self.jours_par_an
-        
-        current_regime = self.config_regimes[-1]
-        regime_idx = len(self.config_regimes) - 1
-        for i, regime in enumerate(self.config_regimes):
-            if annee_prec < regime['annee_fin']:
-                current_regime = regime
-                regime_idx = i
-                break
-                
-        yield_initial = current_regime['yield_initial']
-        croiss_div = current_regime['croiss_div']
-        
-        if regime_idx == 0:
-            spot_base = niveau_initial
-        else:
-            spot_base = spots_debut_periode.get(regime_idx, niveau_initial)
-            
-        div_base = spot_base * yield_initial
-        annees_dans_regime = annee_prec - current_regime['annee_debut']
-        
-        return div_base * (1 + croiss_div)**annees_dans_regime
-
 
 class DecrementIndex:
     """Modélise spécifiquement la mécanique mathématique d'un indice Decrement"""
@@ -78,39 +56,25 @@ class DecrementIndex:
         trajectoires_dec[:, 0] = self.niveau_initial
         trajectoires_pr[:, 0] = self.niveau_initial
         
-        spots_debut_periode = {}
-        jour_regime_map = {regime['jour_debut']: i for i, regime in enumerate(scenario.config_regimes) if i > 0}
-        
         for t in range(1, total_jours + 1):
             z = Z_chocs[:, t-1]
             vol_j = scenario.vol_dyn[t-1]
-            r_perf_j = scenario.r_perf_dyn[t-1]
+            r_perf_j = scenario.r_perf_dyn[t-1]  # Drift Total Return
+            yield_j = scenario.yield_dyn[t-1]    # Constant Yield
             
             choc_jour = vol_j * np.sqrt(dt) * z
             
-            # --- Indice Price Return ---
-            evol_pr = np.exp((r_perf_j - 0.5 * vol_j**2) * dt + choc_jour)
+            # --- Indice Total Return (Base) ---
+            evol_tr = np.exp((r_perf_j - 0.5 * vol_j**2) * dt + choc_jour)
+            
+            # --- Indice Price Return (Soustraction du dividende dans l'exponentielle) ---
+            evol_pr = np.exp((r_perf_j - yield_j - 0.5 * vol_j**2) * dt + choc_jour)
+            
+            # Application
             n_niv_pr = trajectoires_pr[:, t-1] * evol_pr
+            n_niv_dec = (trajectoires_dec[:, t-1] * evol_tr) - d_points
             
-            if (t - 1) in jour_regime_map:
-                idx = jour_regime_map[t - 1]
-                spots_debut_periode[idx] = np.mean(trajectoires_pr[:, t-1])
-            
-            # --- Calcul du dividende cash ---
-            cash_div_jour = scenario.get_cash_dividend(t, self.niveau_initial, spots_debut_periode)
-            
-            # --- Indice Decrement ---
-            prev_levels = trajectoires_dec[:, t-1]
-            yield_dynamique = np.zeros_like(prev_levels)
-            mask = prev_levels > 0
-            
-            yield_dynamique[mask] = cash_div_jour / prev_levels[mask]
-            yield_dynamique = np.clip(yield_dynamique, 0.0, 1000.0)
-            
-            mu_TR = r_perf_j + yield_dynamique
-            evol_tr = np.exp((mu_TR - 0.5 * vol_j**2) * dt + choc_jour)
-            
-            n_niv_dec = prev_levels * evol_tr - d_points
+            # Plancher à 0
             n_niv_dec = np.maximum(0.0, n_niv_dec)
             
             trajectoires_dec[:, t] = n_niv_dec
@@ -553,8 +517,7 @@ class SimulationEngine:
         
         labels = [b['label'] for b in bin_stats]
         dec_vals = [b['moy_dec'] for b in bin_stats]
-        pr_vals = [b['moy_pr'] for b in bin_stats]
-        
+        pr_vals = [b['moy_pr'] for b in bin_stats]        
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=labels, y=dec_vals,

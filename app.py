@@ -34,13 +34,12 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
         def_rp = 4.0 if i==0 else (-15.0 if i==1 else 5.0)
         def_vol = 15.0 if i==0 else (35.0 if i==1 else 18.0)
         def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
-        def_cd = 4.0 if i==0 else (0.0 if i==1 else 5.0)
+        def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
         
         d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_pct_{i}")
-        rp = st.number_input(f"Drift P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
+        rp = st.number_input(f"Drift Total Return P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
         vol = st.number_input(f"Volatilité P{i+1} (%)", value=def_vol, format="%.1f", key=f"vol_pct_{i}")
-        yi = st.number_input(f"Yield Initial P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
-        cd = st.number_input(f"Croissance Div P{i+1} (%)", value=def_cd, format="%.1f", key=f"cd_pct_{i}")
+        yi = st.number_input(f"Yield P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
         st.divider()
         
         somme_annees += d
@@ -48,8 +47,7 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
             "duree_annees": d,
             "r_perf": rp / 100.0,
             "vol": vol / 100.0,
-            "yield_initial": yi / 100.0,
-            "croiss_div": cd / 100.0
+            "yield_initial": yi / 100.0
         })
 
 with st.sidebar.expander("3. Indice Decrement", expanded=(mode == "Scénario Fixe")):
@@ -118,7 +116,11 @@ if lancer:
                     st.divider()
                     st.markdown(f"**Analyse Iso-Risque (Expected Loss) :**")
                     st.markdown(f"- Espérance de Perte (Decrement) : **{el_dec*100:.2f}%**")
-                    st.markdown(f"- PDI Équivalent sur Price Return : **{pdi_equiv_pr*100:.2f}%**")
+                    if np.isnan(pdi_equiv_pr):
+                        st.markdown(f"- PDI Équivalent sur Price Return : **Impossible à atteindre (> 100%)**")
+                        st.warning("L'espérance de perte du Decrement est supérieure au risque maximal possible sur le Price Return (même sans aucune protection du capital).")
+                    else:
+                        st.markdown(f"- PDI Équivalent sur Price Return : **{pdi_equiv_pr*100:.2f}%**")
                     st.info("Note : Bien que l'espérance de perte soit équivalente, le profil de risque diffère. Avec un PDI PR plus élevé, la probabilité de toucher le PDI augmente, mais la perte moyenne en cas de chute est souvent plus faible, créant une variance différente des rendements.")
                     
                 with col_graphs:
