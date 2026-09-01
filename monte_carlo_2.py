@@ -328,18 +328,16 @@ class SimulationEngine:
         # 1. Écart de sur-perte
         ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
         
-        from scipy.signal import savgol_filter
+        # 2. Dérivées Secondes (Accélération du risque) via ajustement polynomial global
+        # --- NOUVEAU CALCUL POUR LA PROBABILITÉ ---
+        coefs_prob = np.polyfit(spots_array, probs_pdi_dec, deg=4)
+        poly_prob = np.poly1d(coefs_prob)
+        d2_prob = poly_prob.deriv(2)(spots_array)
         
-        # L'écart entre deux spots (ici 50) pour avoir la bonne échelle de dérivée
-        delta_spot = spots_array[1] - spots_array[0]
-
-        # 2. Dérivées Secondes (Accélération du risque) via Savitzky-Golay
-        # Ce filtre calcule directement la dérivée (deriv=2) en ajustant un polynôme local (polyorder=3)
-        # sur une fenêtre glissante (window_length=11). C'est parfait pour éliminer le bruit Monte Carlo.
-        d2_prob = savgol_filter(probs_pdi_dec, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
-        
-        # Pour l'écart (Sur-perte)
-        d2_ecart = savgol_filter(ecarts, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
+        # --- NOUVEAU CALCUL POUR L'ÉCART (SUR-PERTE) ---
+        coefs_ecart = np.polyfit(spots_array, ecarts, deg=4)
+        poly_ecart = np.poly1d(coefs_ecart)
+        d2_ecart = poly_ecart.deriv(2)(spots_array)
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
