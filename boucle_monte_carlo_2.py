@@ -15,9 +15,9 @@ def main():
     # --- CONFIGURATION DU STRESS TEST ---
     # Coupe des dividendes de -100% en période 2 et 3
     mes_regimes = [
-        {"duree_annees": 3, "r_perf": 0.04, "vol": 0.15, "yield_initial": yield_fixe, "croiss_div": 0.04},
-        {"duree_annees": 2, "r_perf": -0.15, "vol": 0.35, "yield_initial": 0.0, "croiss_div": 0.0},
-        {"duree_annees": 5, "r_perf": 0.05, "vol": 0.18, "yield_initial": 0.05, "croiss_div": 0.05}
+        {"duree_annees": 3, "r_perf": 0.04, "vol": 0.15, "yield_initial": yield_fixe},
+        {"duree_annees": 2, "r_perf": -0.15, "vol": 0.35, "yield_initial": 0.0},
+        {"duree_annees": 5, "r_perf": 0.05, "vol": 0.18, "yield_initial": 0.05}
     ]
 
     spots_test = np.linspace(400, 2000, 33) # De 400 à 2000 par pas de 50
