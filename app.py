@@ -95,13 +95,13 @@ if lancer:
                 
                 mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
                 mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
-                
-                traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=int(nb_trajectoires), seed=42)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
                     nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
-                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
+                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach)
                 stats_text = f.getvalue()
                 
                 st.success(f"Simulation terminée avec succès !")
@@ -141,7 +141,8 @@ if lancer:
             probs_rappel = []
             moyennes_pr_crash = []
             moyennes_dec_crash = []
-            moyennes_payoffs = []
+            moyennes_payoffs_dec = []
+            moyennes_payoffs_pr = []
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -159,17 +160,17 @@ if lancer:
                 moteur.seed = int(seed)
                 np.random.seed(moteur.seed)
                 
-                traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
                 valeurs_finales_dec = traj_dec[:, -1]
                 valeurs_finales_pr = traj_pr[:, -1]
                 
-                en_dessous_pdi_dec = (valeurs_finales_dec < pdi_niveau_dyn) & (~est_rappele)
-                en_dessous_pdi_pr = (valeurs_finales_pr < pdi_niveau_dyn) & (~est_rappele)
+                en_dessous_pdi_dec = (valeurs_finales_dec < pdi_niveau_dyn) & (~est_rappele_dec)
+                en_dessous_pdi_pr = (valeurs_finales_pr < pdi_niveau_dyn) & (~est_rappele_pr)
                 
                 probs_pdi_dec.append(np.mean(en_dessous_pdi_dec) * 100)
                 probs_pdi_pr.append(np.mean(en_dessous_pdi_pr) * 100)
-                probs_rappel.append(np.mean(est_rappele) * 100)
+                probs_rappel.append(np.mean(est_rappele_dec) * 100)
                 
                 if np.any(en_dessous_pdi_dec):
                     moy_pr_crash_pct = (np.mean(valeurs_finales_pr[en_dessous_pdi_dec]) / spot) * 100
@@ -180,9 +181,10 @@ if lancer:
                     
                 moyennes_pr_crash.append(moy_pr_crash_pct)
                 moyennes_dec_crash.append(moy_dec_crash_pct)
-                moyennes_payoffs.append(np.mean(payoffs) * 100)
+                moyennes_payoffs_dec.append(np.mean(payoffs_dec) * 100)
+                moyennes_payoffs_pr.append(np.mean(payoffs_pr) * 100)
                 
-                del traj_pr, traj_dec, est_rappele, mon_indice_dec, mon_autocall
+                del traj_pr, traj_dec, est_rappele_dec, est_rappele_pr, mon_indice_dec, mon_autocall
                 gc.collect()
                 
                 progress_bar.progress((i + 1) / len(spots_test))
@@ -192,7 +194,7 @@ if lancer:
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
             fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff = moteur.plot_sensibilite(
-                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs,
+                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
                 decrement_annuel, yield_fixe, mes_regimes_input
             )
             

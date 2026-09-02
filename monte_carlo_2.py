@@ -148,19 +148,27 @@ class SimulationEngine:
         Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
         
         traj_pr, traj_dec = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
-        est_rappele, obs_de_rappel = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
-        payoffs = product.calculate_payoff(traj_dec, est_rappele, obs_de_rappel, index.niveau_initial)
         
-        return traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs
+        # Sur le Decrement
+        est_rappele_dec, obs_de_rappel_dec = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
+        payoffs_dec = product.calculate_payoff(traj_dec, est_rappele_dec, obs_de_rappel_dec, index.niveau_initial)
+        
+        # Sur le Price Return
+        est_rappele_pr, obs_de_rappel_pr = product.evaluate(traj_pr, scenario, self.nb_trajectoires)
+        payoffs_pr = product.calculate_payoff(traj_pr, est_rappele_pr, obs_de_rappel_pr, index.niveau_initial)
+        
+        return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
-    def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, product: AutocallProduct, scenario: MarketScenario):
+    def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, product: AutocallProduct, scenario: MarketScenario):
         print(f"#### Statistiques pour le {nom_scenario}\n")
         
-        pct_rappel = np.mean(est_rappele) * 100
-        print(f"- **Pourcentage de trajectoires rappelées (Autocall)** : {pct_rappel:.2f}%")
+        pct_rappel_dec = np.mean(est_rappele_dec) * 100
+        pct_rappel_pr = np.mean(est_rappele_pr) * 100
+        print(f"- **Pourcentage de trajectoires rappelées** : Decrement = {pct_rappel_dec:.2f}% | Price Return = {pct_rappel_pr:.2f}%")
         
-        moy_payoff = np.mean(payoffs) * 100
-        print(f"- **Payoff moyen (Espérance de gain)** : {moy_payoff:.2f}%\n")
+        moy_payoff_dec = np.mean(payoffs_dec) * 100
+        moy_payoff_pr = np.mean(payoffs_pr) * 100
+        print(f"- **Payoff moyen (Espérance de gain)** : Decrement = {moy_payoff_dec:.2f}% | Price Return = {moy_payoff_pr:.2f}%\n")
         
         niveau_initial = traj_dec[0, 0]
         
@@ -168,7 +176,7 @@ class SimulationEngine:
         valeurs_finales_dec = traj_dec[:, -1]
         valeurs_finales_pr = traj_pr[:, -1]
         
-        en_dessous_pdi = (valeurs_finales_dec < product.niveau_pdi) & (~est_rappele)
+        en_dessous_pdi = (valeurs_finales_dec < product.niveau_pdi) & (~est_rappele_dec)
         pct_en_dessous = np.mean(en_dessous_pdi) * 100
         
         print(f"\n#### À MATURITÉ (Année {scenario.annees}) :")
@@ -353,7 +361,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs, decrement_annuel, yield_fixe, mes_regimes):
+    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -530,9 +538,14 @@ class SimulationEngine:
         # ==========================================
         fig_payoff = go.Figure()
         fig_payoff.add_trace(
-            go.Scatter(x=spots_test, y=moyennes_payoffs, mode='lines+markers',
-                       name='Payoff Moyen (Espérance de gain)',
+            go.Scatter(x=spots_test, y=moyennes_payoffs_dec, mode='lines+markers',
+                       name='Payoff Moyen (Decrement)',
                        line=dict(color='purple', width=2), marker=dict(symbol='star', size=8))
+        )
+        fig_payoff.add_trace(
+            go.Scatter(x=spots_test, y=moyennes_payoffs_pr, mode='lines+markers',
+                       name='Payoff Moyen (Price Return)',
+                       line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='star', size=8))
         )
         fig_payoff.add_hline(y=100.0, line_dash="dash", line_color="black", annotation_text="Capital Garanti (100%)", annotation_position="bottom right")
         fig_payoff.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
