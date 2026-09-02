@@ -5,7 +5,6 @@ import contextlib
 import monte_carlo_2
 import importlib
 import gc
-import monte_carlo_pdi
 
 importlib.reload(monte_carlo_2)
 from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
@@ -151,9 +150,10 @@ if lancer:
             probs_pdi_dec = []
             probs_pdi_pr = []
             probs_rappel = []
-            moyennes_dec_crash = []
             moyennes_pr_crash = []
+            moyennes_dec_crash = []
             pdis_equivalents = []
+            moyennes_payoffs = []
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -165,13 +165,13 @@ if lancer:
                 pdi_niveau_dyn = spot * niveau_pdi_pct
                 barriere_rappel = spot * barriere_rappel_pct
                 
-                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite))
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
                 
                 # Réinitialiser la seed à chaque boucle pour que les courbes de sensibilité soient très lisses
                 moteur.seed = int(seed)
                 np.random.seed(moteur.seed)
                 
-                traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
                 valeurs_finales_dec = traj_dec[:, -1]
                 valeurs_finales_pr = traj_pr[:, -1]
@@ -195,6 +195,7 @@ if lancer:
                     
                 moyennes_pr_crash.append(moy_pr_crash_pct)
                 moyennes_dec_crash.append(moy_dec_crash_pct)
+                moyennes_payoffs.append(np.mean(payoffs) * 100)
                 
                 del traj_pr, traj_dec, est_rappele, mon_indice_dec, mon_autocall
                 gc.collect()
@@ -205,8 +206,8 @@ if lancer:
             
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
-            fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1 = moteur.plot_sensibilite(
-                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, 
+            fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff = moteur.plot_sensibilite(
+                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs,
                 decrement_annuel, yield_fixe, mes_regimes_input
             )
             
@@ -216,6 +217,7 @@ if lancer:
             
             st.plotly_chart(fig_prob, use_container_width=True)
             st.plotly_chart(fig_prob_d1, use_container_width=True)
+            st.plotly_chart(fig_payoff, use_container_width=True)
             st.plotly_chart(fig_niveaux, use_container_width=True)
             st.plotly_chart(fig_ecart, use_container_width=True)
             st.plotly_chart(fig_ecart_d1, use_container_width=True)

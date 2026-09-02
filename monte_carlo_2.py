@@ -353,7 +353,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, decrement_annuel, yield_fixe, mes_regimes):
+    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs, decrement_annuel, yield_fixe, mes_regimes):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -525,7 +525,26 @@ class SimulationEngine:
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=500
         )
         
-        return fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1
+        # ==========================================
+        # GRAPHIQUE 4 : Espérance de Gain (Payoff Moyen)
+        # ==========================================
+        fig_payoff = go.Figure()
+        fig_payoff.add_trace(
+            go.Scatter(x=spots_test, y=moyennes_payoffs, mode='lines+markers',
+                       name='Payoff Moyen (Espérance de gain)',
+                       line=dict(color='purple', width=2), marker=dict(symbol='star', size=8))
+        )
+        fig_payoff.add_hline(y=100.0, line_dash="dash", line_color="black", annotation_text="Capital Garanti (100%)", annotation_position="bottom right")
+        fig_payoff.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
+        fig_payoff.update_layout(
+            title=dict(text=f"<b>4. Évolution de l'Espérance de Gain (Payoff Moyen)</b>", font=dict(size=18)),
+            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            yaxis=dict(title="Payoff Moyen (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
+            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
+            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
+        )
+        
+        return fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff
 
     def plot_distributions(self, traj_pr, traj_dec, product, scenario):
         import plotly.graph_objects as go
