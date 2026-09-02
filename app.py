@@ -112,17 +112,6 @@ if lancer:
                     st.subheader("Statistiques")
                     st.markdown(stats_text)
                     
-                    pdi_equiv_pr, el_dec = monte_carlo_pdi.calculer_pdi_equivalent(traj_pr, traj_dec, est_rappele, niveau_initial, niveau_pdi_pct)
-                    st.divider()
-                    st.markdown(f"**Analyse Iso-Risque (Expected Loss) :**")
-                    st.markdown(f"- Espérance de Perte (Decrement) : **{el_dec*100:.2f}%**")
-                    if np.isnan(pdi_equiv_pr):
-                        st.markdown(f"- PDI Équivalent sur Price Return : **Impossible à atteindre (> 100%)**")
-                        st.warning("L'espérance de perte du Decrement est supérieure au risque maximal possible sur le Price Return (même sans aucune protection du capital).")
-                    else:
-                        st.markdown(f"- PDI Équivalent sur Price Return : **{pdi_equiv_pr*100:.2f}%**")
-                    st.info("Note : Bien que l'espérance de perte soit équivalente, le profil de risque diffère. Avec un PDI PR plus élevé, la probabilité de toucher le PDI augmente, mais la perte moyenne en cas de chute est souvent plus faible, créant une variance différente des rendements.")
-                    
                 with col_graphs:
                     st.subheader("Visualisations")
                     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
@@ -152,7 +141,6 @@ if lancer:
             probs_rappel = []
             moyennes_pr_crash = []
             moyennes_dec_crash = []
-            pdis_equivalents = []
             moyennes_payoffs = []
             
             progress_bar = st.progress(0)
@@ -182,9 +170,6 @@ if lancer:
                 probs_pdi_dec.append(np.mean(en_dessous_pdi_dec) * 100)
                 probs_pdi_pr.append(np.mean(en_dessous_pdi_pr) * 100)
                 probs_rappel.append(np.mean(est_rappele) * 100)
-                
-                pdi_eq, _ = monte_carlo_pdi.calculer_pdi_equivalent(traj_pr, traj_dec, est_rappele, spot, niveau_pdi_pct)
-                pdis_equivalents.append(pdi_eq)
                 
                 if np.any(en_dessous_pdi_dec):
                     moy_pr_crash_pct = (np.mean(valeurs_finales_pr[en_dessous_pdi_dec]) / spot) * 100
@@ -221,9 +206,6 @@ if lancer:
             st.plotly_chart(fig_niveaux, use_container_width=True)
             st.plotly_chart(fig_ecart, use_container_width=True)
             st.plotly_chart(fig_ecart_d1, use_container_width=True)
-            
-            fig_pdi_equiv = monte_carlo_pdi.plot_courbe_pdi_equivalent(spots_test, pdis_equivalents, niveau_pdi_pct)
-            st.plotly_chart(fig_pdi_equiv, use_container_width=True)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
