@@ -85,29 +85,56 @@ class DecrementIndex:
 
 class AutocallProduct:
     """Modélise le produit structuré et ses règles de marché"""
-    def __init__(self, barriere_rappel=1000.0, niveau_pdi=500.0, non_call_period_mois=11, frequence_obs_mois=4, degressivite=0.0):
+    def __init__(self, barriere_rappel=1000.0, niveau_pdi=500.0, non_call_period_mois=11, frequence_obs_mois=4, degressivite=0.0, coupon_periode=2.0):
         self.barriere_rappel = barriere_rappel
         self.niveau_pdi = niveau_pdi
         self.non_call_period_mois = non_call_period_mois
         self.frequence_obs_mois = frequence_obs_mois
         self.degressivite = degressivite
+        self.coupon_periode = coupon_periode / 100.0
         
     def evaluate(self, trajectoires_dec, scenario: MarketScenario, nb_trajectoires):
         est_rappele = np.zeros(nb_trajectoires, dtype=bool)
+        obs_de_rappel = np.zeros(nb_trajectoires, dtype=int)
+        
         jours_par_mois = scenario.jours_par_an // 12
         jours_entre_observations = jours_par_mois * self.frequence_obs_mois
         
         baisse_en_points = self.barriere_rappel * (self.degressivite / 100.0)
-        nb_observations_passees = 0
+        nb_observations_total = 0
+        nb_observations_degressivite = 0
         
         for t in range(1, scenario.total_jours + 1):
-            if (t % jours_entre_observations == 0) and (t >= jours_par_mois * self.non_call_period_mois):
-                barriere_actuelle = self.barriere_rappel - (nb_observations_passees * baisse_en_points)
-                nouveaux_rappels = (~est_rappele) & (trajectoires_dec[:, t] >= barriere_actuelle)
-                est_rappele = est_rappele | nouveaux_rappels
-                nb_observations_passees += 1
+            if (t % jours_entre_observations == 0):
+                nb_observations_total += 1
+                if (t >= jours_par_mois * self.non_call_period_mois):
+                    barriere_actuelle = self.barriere_rappel - (nb_observations_degressivite * baisse_en_points)
+                    nouveaux_rappels = (~est_rappele) & (trajectoires_dec[:, t] >= barriere_actuelle)
+                    
+                    obs_de_rappel[nouveaux_rappels] = nb_observations_total
+                    est_rappele = est_rappele | nouveaux_rappels
+                    
+                    nb_observations_degressivite += 1
                 
-        return est_rappele
+        return est_rappele, obs_de_rappel
+        
+    def calculate_payoff(self, trajectoires_dec, est_rappele, obs_de_rappel, niveau_initial):
+        nb_trajectoires = trajectoires_dec.shape[0]
+        payoffs = np.zeros(nb_trajectoires)
+        
+        # 1. Rappelés
+        payoffs[est_rappele] = 1.0 + (self.coupon_periode * obs_de_rappel[est_rappele])
+        
+        # 2. Non rappelés, au-dessus du PDI
+        valeurs_finales = trajectoires_dec[:, -1]
+        au_dessus_pdi = (~est_rappele) & (valeurs_finales >= self.niveau_pdi)
+        payoffs[au_dessus_pdi] = 1.0
+        
+        # 3. Non rappelés, sous le PDI
+        sous_pdi = (~est_rappele) & (valeurs_finales < self.niveau_pdi)
+        payoffs[sous_pdi] = valeurs_finales[sous_pdi] / niveau_initial
+        
+        return payoffs
 
 class SimulationEngine:
     """Le chef d'orchestre qui lance les calculs globaux"""
@@ -121,15 +148,21 @@ class SimulationEngine:
         Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
         
         traj_pr, traj_dec = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
-        est_rappele = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
+        est_rappele, obs_de_rappel = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
+        payoffs = product.calculate_payoff(traj_dec, est_rappele, obs_de_rappel, index.niveau_initial)
         
-        return traj_pr, traj_dec, est_rappele
+        return traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs
 
-    def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele, product: AutocallProduct, scenario: MarketScenario):
+    def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, product: AutocallProduct, scenario: MarketScenario):
         print(f"#### Statistiques pour le {nom_scenario}\n")
         
         pct_rappel = np.mean(est_rappele) * 100
         print(f"- **Pourcentage de trajectoires rappelées (Autocall)** : {pct_rappel:.2f}%")
+        
+        moy_payoff = np.mean(payoffs) * 100
+        print(f"- **Payoff moyen (Espérance de gain)** : {moy_payoff:.2f}%\n")
+        
+        niveau_initial = traj_dec[0, 0]
         
         reps = []
         valeurs_finales_dec = traj_dec[:, -1]
@@ -145,8 +178,8 @@ class SimulationEngine:
         if np.any(en_dessous_pdi):
             moy_dec_en_dessous = np.mean(valeurs_finales_dec[en_dessous_pdi])
             moy_pr_en_dessous = np.mean(valeurs_finales_pr[en_dessous_pdi])
-            print(f"- **Position moyenne de l'indice Decrement** (pour ces cas) : {moy_dec_en_dessous:.2f} pts")
-            print(f"- **Position moyenne de l'indice PR** (pour ces cas) : {moy_pr_en_dessous:.2f} pts\n")
+            print(f"- **Position moyenne de l'indice Decrement** (pour ces cas) : {(moy_dec_en_dessous / niveau_initial) * 100:.2f}% du Spot")
+            print(f"- **Position moyenne de l'indice PR** (pour ces cas) : {(moy_pr_en_dessous / niveau_initial) * 100:.2f}% du Spot\n")
             
             dec_sous_pdi = valeurs_finales_dec[en_dessous_pdi]
             pr_sous_pdi = valeurs_finales_pr[en_dessous_pdi]
@@ -168,8 +201,8 @@ class SimulationEngine:
                     moy_dec = np.mean(dec_sous_pdi[mask])
                     moy_pr = np.mean(pr_sous_pdi[mask])
                     label = f"{p_low}%-{p_high}%"
-                    bin_stats.append({"label": label, "moy_dec": moy_dec, "moy_pr": moy_pr})
-                    print(f"- Tranche [{label}] : Moyenne Decrement = {moy_dec:.2f} pts | Moyenne PR = {moy_pr:.2f} pts")
+                    bin_stats.append({"label": label, "moy_dec": (moy_dec/niveau_initial)*100, "moy_pr": (moy_pr/niveau_initial)*100})
+                    print(f"- Tranche [{label}] : Moyenne Decrement = {(moy_dec/niveau_initial)*100:.2f}% | Moyenne PR = {(moy_pr/niveau_initial)*100:.2f}%")
             
             pct_levels = [10, 25, 50, 75, 90]
             pct_values = [np.percentile(dec_sous_pdi, p) for p in pct_levels]
@@ -180,8 +213,8 @@ class SimulationEngine:
                 idx = np.argmin(np.abs(dec_sous_pdi - val))
                 original_idx = np.where(en_dessous_pdi)[0][idx]
                 
-                print(f"- **Top {p}%** : Niveau cible Decrement = {val:.2f} pts | PR équivalent = {pr_sous_pdi[idx]:.2f} pts")
-                reps.append((traj_pr[original_idx], traj_dec[original_idx], f"Top {p}%"))
+                print(f"- **Top {p}%** : Niveau cible Decrement = {(val/niveau_initial)*100:.2f}% | PR équivalent = {(pr_sous_pdi[idx]/niveau_initial)*100:.2f}%")
+                reps.append(((traj_pr[original_idx]/niveau_initial)*100, (traj_dec[original_idx]/niveau_initial)*100, f"Top {p}%"))
         else:
             print("- Aucun scénario ne finit en dessous du PDI à maturité.")
             
@@ -197,22 +230,25 @@ class SimulationEngine:
                                text=f"Période {i+1}<br>Drift: {regime['r_perf']*100:+.0f}%<br>Vol: {regime['vol']*100:.0f}%<br>Yield Div: {regime['yield_initial']*100:.1f}%",
                                showarrow=False, bgcolor="rgba(255,255,255,0.8)", bordercolor="lightgray")
 
-    def _add_product_levels_plotly(self, fig, product, scenario):
+    def _add_product_levels_plotly(self, fig, product, scenario, niveau_initial):
         """Ajoute les barrières du produit Autocall pour Plotly"""
-        fig.add_hline(y=product.niveau_pdi, line_dash="dash", line_color="red", line_width=2,
-                      annotation_text=f"PDI ({product.niveau_pdi:.0f} pts)", annotation_position="bottom right")
+        pdi_pct = (product.niveau_pdi / niveau_initial) * 100
+        rappel_pct = (product.barriere_rappel / niveau_initial) * 100
+        
+        fig.add_hline(y=pdi_pct, line_dash="dash", line_color="red", line_width=2,
+                      annotation_text=f"PDI ({pdi_pct:.0f}%)", annotation_position="bottom right")
         
         if product.degressivite == 0.0:
-            fig.add_hline(y=product.barriere_rappel, line_dash="dashdot", line_color="purple", line_width=2,
-                          annotation_text=f"Rappel ({product.barriere_rappel:.0f} pts)", annotation_position="top right")
+            fig.add_hline(y=rappel_pct, line_dash="dashdot", line_color="purple", line_width=2,
+                          annotation_text=f"Rappel ({rappel_pct:.0f}%)", annotation_position="top right")
         else:
             import plotly.graph_objects as go
             jours_par_mois = scenario.jours_par_an // 12
             jours_entre_observations = jours_par_mois * product.frequence_obs_mois
-            baisse_en_points = product.barriere_rappel * (product.degressivite / 100.0)
+            baisse_en_pct = rappel_pct * (product.degressivite / 100.0)
             
             x_barriere = [0]
-            y_barriere = [product.barriere_rappel]
+            y_barriere = [rappel_pct]
             
             nb_observations_passees = 0
             
@@ -221,19 +257,19 @@ class SimulationEngine:
                     annee = t / scenario.jours_par_an
                     
                     # Fin de la marche actuelle
-                    barriere_actuelle = product.barriere_rappel - (nb_observations_passees * baisse_en_points)
+                    barriere_actuelle = rappel_pct - (nb_observations_passees * baisse_en_pct)
                     x_barriere.append(annee)
                     y_barriere.append(barriere_actuelle)
                     
                     # Début de la marche suivante
                     nb_observations_passees += 1
-                    barriere_prochaine = product.barriere_rappel - (nb_observations_passees * baisse_en_points)
+                    barriere_prochaine = rappel_pct - (nb_observations_passees * baisse_en_pct)
                     x_barriere.append(annee)
                     y_barriere.append(barriere_prochaine)
                     
             # Dernière marche jusqu'à la fin
             x_barriere.append(scenario.annees)
-            y_barriere.append(product.barriere_rappel - (nb_observations_passees * baisse_en_points))
+            y_barriere.append(rappel_pct - (nb_observations_passees * baisse_en_pct))
             
             fig.add_trace(go.Scatter(x=x_barriere, y=y_barriere, mode='lines', 
                                      line=dict(color='purple', width=2, dash='dashdot'), 
@@ -268,10 +304,10 @@ class SimulationEngine:
                                           legendgroup=label))
                 
         self._add_background_regimes_plotly(fig1, scenario)
-        self._add_product_levels_plotly(fig1, product, scenario)
+        self._add_product_levels_plotly(fig1, product, scenario, index.niveau_initial)
         
         fig1.update_layout(
-                           xaxis_title="Années", yaxis_title="Sous PDI",
+                           xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
                            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
                            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
                            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
@@ -285,16 +321,16 @@ class SimulationEngine:
         pct_levels = [90, 75, 50, 25, 10]
         colors_pct_map = {90: '#1a9850', 75: '#d9ef8b', 50: '#fee08b', 25: '#fc8d59', 10: '#d73027'}
         
-        max_y_display = 2000
+        max_y_display = 200
         for p in pct_levels:
             val_cible = np.percentile(valeurs_finales_toutes_dec, p)
             idx_closest = np.argmin(np.abs(valeurs_finales_toutes_dec - val_cible))
-            t_dec = traj_dec[idx_closest]
-            t_pr = traj_pr[idx_closest]
+            t_dec = (traj_dec[idx_closest] / index.niveau_initial) * 100
+            t_pr = (traj_pr[idx_closest] / index.niveau_initial) * 100
             c = colors_pct_map[p]
             
             if p == 50:
-                max_y_display = max(2000, np.max(t_dec)*1.2)
+                max_y_display = max(200, np.max(t_dec)*1.2)
             
             label = f"Top {p}%"
             fig2.add_trace(go.Scatter(x=axe_temps, y=t_dec, mode='lines', 
@@ -307,10 +343,10 @@ class SimulationEngine:
                                       legendgroup=label))
         
         self._add_background_regimes_plotly(fig2, scenario)
-        self._add_product_levels_plotly(fig2, product, scenario)
+        self._add_product_levels_plotly(fig2, product, scenario, index.niveau_initial)
         
         fig2.update_layout(
-                           xaxis_title="Années", yaxis_title=None,
+                           xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
                            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(range=[0, max_y_display]),
                            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
                            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
@@ -601,10 +637,10 @@ if __name__ == "__main__":
     mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4, degressivite=1.0)
     
     moteur = SimulationEngine(nb_trajectoires=10000,seed=42)
-    traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+    traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
     
     nom_scenario = f"Scénario N-Périodes Test"
-    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
     
     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
     fig1.show()

@@ -65,6 +65,7 @@ with st.sidebar.expander("4. Produit Autocall", expanded=False):
     st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
     barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
     niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+    coupon_periode = st.number_input("Coupon par observation (%)", value=2.0, step=0.1)
     degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, help="Baisse en pourcentage du niveau initial à chaque constatation après la période de lock-up.")
     non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
     frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
@@ -94,14 +95,14 @@ if lancer:
                 niveau_pdi = niveau_initial * niveau_pdi_pct
                 
                 mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
-                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite))
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
                 
-                traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
                     nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
-                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
                 stats_text = f.getvalue()
                 
                 st.success(f"Simulation terminée avec succès !")
