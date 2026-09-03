@@ -14,7 +14,7 @@ st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
 st.title("Simulateur Monte Carlo")
 
 # --- SIDEBAR ---
-mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)"])
+mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)", "Matrice d'Équivalence (PR)"])
 st.sidebar.divider()
 
 st.sidebar.header("Paramètres")
@@ -49,8 +49,8 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
             "yield_initial": yi / 100.0
         })
 
-with st.sidebar.expander("3. Indice Decrement", expanded=(mode == "Scénario Fixe")):
-    if mode == "Scénario Fixe":
+with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Sensibilité (Spots)")):
+    if mode in ["Scénario Fixe", "Matrice d'Équivalence (PR)"]:
         niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
     else:
         st.info("Le Niveau Initial est testé sur une plage.")
@@ -75,8 +75,10 @@ with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
 
 if mode == "Scénario Fixe":
     btn_text = "Lancer le Scénario Fixe"
-else:
+elif mode == "Analyse de Sensibilité (Spots)":
     btn_text = "Lancer l'Analyse de Sensibilité"
+else:
+    btn_text = "Générer la Matrice"
 
 lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
 
@@ -133,7 +135,7 @@ if lancer:
                     st.plotly_chart(fig_dist_pr, use_container_width=True)
                     st.plotly_chart(fig_dist_rappel, use_container_width=True)
                     
-        else: # Analyse de Sensibilité
+        elif mode == "Analyse de Sensibilité (Spots)": # Analyse de Sensibilité
             spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
             
             probs_pdi_dec = []
@@ -208,6 +210,57 @@ if lancer:
             st.plotly_chart(fig_niveaux, use_container_width=True)
             st.plotly_chart(fig_ecart, use_container_width=True)
             st.plotly_chart(fig_ecart_d1, use_container_width=True)
+
+        elif mode == "Matrice d'Équivalence (PR)":
+            st.header("Matrice d'Équivalence PR")
+            
+            tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+            
+            # Paramètres de la grille
+            list_coupons = np.arange(3.0, 7.5, 0.5)
+            list_pdis = np.arange(40, 75, 5)
+            list_barrieres = [90.0, 95.0, 100.0]
+            
+            if st.sidebar.button("Générer la Matrice", type="primary"):
+                with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
+                    spot = float(niveau_initial)
+                    pdi_niveau = spot * niveau_pdi_pct
+                    barriere_rappel = spot * barriere_rappel_pct
+                    
+                    # 1. Calcul du Payoff Cible sur Decrement
+                    mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                    mon_autocall = AutocallProduct(
+                        barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
+                        non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
+                        degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                    )
+                    scenario_krach = MarketScenario(
+                        annees=int(annees), jours_par_an=252,
+                        config_regimes=mes_regimes_input
+                    )
+                    moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
+                    _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                    
+                    target_payoff = np.mean(payoffs_dec) * 100
+                    
+                    st.success(f"**Payoff Cible (Decrement)** : {target_payoff:.2f}%  *(Tolérance : ±{tolerance}%)*")
+                    
+                    # 2. Génération de la grille PR
+                    df = moteur.generer_matrice_structurelle(
+                        mon_indice_dec, scenario_krach, mon_autocall, 
+                        list_coupons, list_pdis, list_barrieres
+                    )
+                    
+                    # 3. Filtrage Visuel
+                    df_filtered = df.copy()
+                    for col in df_filtered.columns:
+                        df_filtered[col] = df_filtered[col].apply(
+                            lambda x: f"{x:.2f}%" if abs(x - target_payoff) <= tolerance else ""
+                        )
+                    
+                    # Affichage
+                    st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
+                    st.dataframe(df_filtered, use_container_width=True, height=600)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")

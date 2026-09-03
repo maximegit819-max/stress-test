@@ -159,6 +159,36 @@ class SimulationEngine:
         
         return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
+    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres):
+        import pandas as pd
+        
+        np.random.seed(self.seed)
+        Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
+        traj_pr, _ = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
+        
+        results = []
+        for pdi_pct in list_pdis:
+            for barriere_pct in list_barrieres:
+                row_data = {'PDI': f"{pdi_pct:.1f}%", 'Barrière': f"{barriere_pct:.1f}%"}
+                for coupon_pct in list_coupons:
+                    test_product = AutocallProduct(
+                        barriere_rappel=index.niveau_initial * (barriere_pct / 100.0),
+                        niveau_pdi=index.niveau_initial * (pdi_pct / 100.0),
+                        non_call_period_mois=base_product.non_call_period_mois,
+                        frequence_obs_mois=base_product.frequence_obs_mois,
+                        degressivite=base_product.degressivite,
+                        coupon_periode=coupon_pct
+                    )
+                    est_rappele, obs_de_rappel = test_product.evaluate(traj_pr, scenario, self.nb_trajectoires)
+                    payoffs = test_product.calculate_payoff(traj_pr, est_rappele, obs_de_rappel, index.niveau_initial)
+                    mean_payoff = np.mean(payoffs) * 100
+                    row_data[f"Coupon = {coupon_pct:.2f}%"] = round(mean_payoff, 2)
+                results.append(row_data)
+                
+        df = pd.DataFrame(results)
+        df.set_index(['PDI', 'Barrière'], inplace=True)
+        return df
+
     def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, product: AutocallProduct, scenario: MarketScenario):
         print(f"#### Statistiques pour le {nom_scenario}\n")
         
