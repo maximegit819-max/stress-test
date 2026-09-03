@@ -16,7 +16,7 @@ st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
 st.title("Simulateur Monte Carlo")
 
 # --- SIDEBAR ---
-mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)", "Matrice d'Équivalence (PR)"])
+mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"])
 st.sidebar.divider()
 
 st.sidebar.header("Paramètres")
@@ -52,7 +52,7 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
         })
 
 with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Sensibilité (Spots)")):
-    if mode in ["Scénario Fixe", "Matrice d'Équivalence (PR)"]:
+    if mode in ["Scénario Fixe", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"]:
         niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
     else:
         st.info("Le Niveau Initial est testé sur une plage.")
@@ -79,10 +79,13 @@ if mode == "Scénario Fixe":
     btn_text = "Lancer le Scénario Fixe"
 elif mode == "Analyse de Sensibilité (Spots)":
     btn_text = "Lancer l'Analyse de Sensibilité"
-else:
+elif mode == "Matrice d'Équivalence (PR)":
     btn_text = "Générer la Matrice"
     st.sidebar.divider()
     tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+else:
+    btn_text = "Générer la Surface 3D"
+    st.sidebar.divider()
     list_coupons = np.arange(0.25, 5.25, 0.25)
     coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D", [f"{c:.2f}%" for c in list_coupons], index=len(list_coupons)//2)
 
@@ -264,10 +267,38 @@ if lancer:
                 st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
                 st.dataframe(df_filtered, use_container_width=True, height=600)
                 
-                # 4. Vue 3D
-                st.subheader("Vue 3D de l'Équivalence")
-                st.markdown(f"Topographie des payoffs PR pour un **Coupon fixé à {coupon_3d}**.")
+        elif mode == "Surface 3D (Decrement)":
+            st.header("Surface 3D (Decrement)")
+            
+            # Paramètres de la grille (nouveaux paramètres demandés)
+            list_coupons = np.arange(0.25, 5.25, 0.25)
+            list_pdis = np.arange(35.0, 85.0, 5.0)
+            list_barrieres = np.arange(80.0, 125.0, 5.0)
+            
+            with st.spinner("Génération de la surface 3D sur l'indice Decrement..."):
+                spot = float(niveau_initial)
+                pdi_niveau = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
                 
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(
+                    barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
+                    non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
+                    degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                )
+                scenario_krach = MarketScenario(
+                    annees=int(annees), jours_par_an=252,
+                    config_regimes=mes_regimes_input
+                )
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
+                
+                # Génération de la grille avec use_decrement=True
+                df = moteur.generer_matrice_structurelle(
+                    mon_indice_dec, scenario_krach, mon_autocall, 
+                    list_coupons, list_pdis, list_barrieres, use_decrement=True
+                )
+                
+                # Extraction des données pour Plotly
                 df_plot = df[[coupon_3d]].reset_index()
                 df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
                 df_plot['Barrière'] = df_plot['Barrière'].str.replace('%', '').astype(float)
@@ -276,28 +307,17 @@ if lancer:
                 x_vals = pivot_df.columns.values.astype(float)
                 y_vals = pivot_df.index.values.astype(float)
                 z_vals = pivot_df.values.astype(float)
-                z_target = np.full(z_vals.shape, float(target_payoff))
                 
-                # Make 2D meshgrids for x and y to be 100% robust
                 x_mesh, y_mesh = np.meshgrid(x_vals, y_vals)
                 
                 fig3d = go.Figure()
-                # Montagne des Payoffs
                 fig3d.add_trace(go.Surface(
                     z=z_vals, x=x_mesh, y=y_mesh, 
-                    colorscale='Viridis', name="Payoff PR", showscale=False
-                ))
-                # Plaque de verre (Target)
-                # Utilisation d'une couleur fixe pour éviter le crash de colorscale sur une surface plate
-                fig3d.add_trace(go.Surface(
-                    z=z_target, x=x_mesh, y=y_mesh, 
-                    surfacecolor=np.zeros_like(z_target),
-                    colorscale=[[0, 'red'], [1, 'red']], 
-                    opacity=0.5, name="Cible Decrement", showscale=False,
-                    cmin=0, cmax=1
+                    colorscale='Viridis', name="Payoff Decrement", showscale=False
                 ))
                 
                 fig3d.update_layout(
+                    title=f"Topographie des payoffs Decrement (Coupon fixé à {coupon_3d})",
                     scene=dict(
                         xaxis_title='Barrière Initiale (%)',
                         yaxis_title='Niveau PDI (%)',

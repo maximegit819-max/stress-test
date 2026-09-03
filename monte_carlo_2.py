@@ -159,12 +159,14 @@ class SimulationEngine:
         
         return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
-    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres):
+    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres, use_decrement=False):
         import pandas as pd
         
         np.random.seed(self.seed)
         Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
-        traj_pr, _ = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
+        traj_pr, traj_dec = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
+        
+        traj_to_use = traj_dec if use_decrement else traj_pr
         
         results = []
         for pdi_pct in list_pdis:
@@ -179,8 +181,8 @@ class SimulationEngine:
                         degressivite=base_product.degressivite,
                         coupon_periode=coupon_pct
                     )
-                    est_rappele, obs_de_rappel = test_product.evaluate(traj_pr, scenario, self.nb_trajectoires)
-                    payoffs = test_product.calculate_payoff(traj_pr, est_rappele, obs_de_rappel, index.niveau_initial)
+                    est_rappele, obs_de_rappel = test_product.evaluate(traj_to_use, scenario, self.nb_trajectoires)
+                    payoffs = test_product.calculate_payoff(traj_to_use, est_rappele, obs_de_rappel, index.niveau_initial)
                     mean_payoff = np.mean(payoffs) * 100
                     row_data[f"{coupon_pct:.2f}%"] = round(mean_payoff, 2)
                 results.append(row_data)
