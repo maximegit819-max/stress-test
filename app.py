@@ -84,7 +84,7 @@ else:
     st.sidebar.divider()
     tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
     list_coupons = np.arange(0.25, 5.25, 0.25)
-    coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D (%)", [f"{c:.2f}" for c in list_coupons], index=len(list_coupons)//2)
+    coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D", [f"{c:.2f}%" for c in list_coupons], index=len(list_coupons)//2)
 
 lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
 
@@ -266,7 +266,7 @@ if lancer:
                 
                 # 4. Vue 3D
                 st.subheader("Vue 3D de l'Équivalence")
-                st.markdown(f"Topographie des payoffs PR pour un **Coupon fixé à {coupon_3d}%**.")
+                st.markdown(f"Topographie des payoffs PR pour un **Coupon fixé à {coupon_3d}**.")
                 
                 df_plot = df[[coupon_3d]].reset_index()
                 df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
