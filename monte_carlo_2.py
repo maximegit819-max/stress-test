@@ -182,7 +182,7 @@ class SimulationEngine:
                     est_rappele, obs_de_rappel = test_product.evaluate(traj_pr, scenario, self.nb_trajectoires)
                     payoffs = test_product.calculate_payoff(traj_pr, est_rappele, obs_de_rappel, index.niveau_initial)
                     mean_payoff = np.mean(payoffs) * 100
-                    row_data[f"Coupon = {coupon_pct:.2f}%"] = round(mean_payoff, 2)
+                    row_data[f"{coupon_pct:.2f}%"] = round(mean_payoff, 2)
                 results.append(row_data)
                 
         df = pd.DataFrame(results)

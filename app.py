@@ -219,7 +219,7 @@ if lancer:
             # Paramètres de la grille
             list_coupons = np.arange(0.25, 5.25, 0.25)
             list_pdis = np.arange(40.0, 85.0, 5.0)
-            list_barrieres = np.arange(150.0, 95.0, -5.0)
+            list_barrieres = np.arange(100.0, 155.0, 5.0)
             
             with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
                 spot = float(niveau_initial)
