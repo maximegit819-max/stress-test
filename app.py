@@ -2,6 +2,8 @@ import streamlit as st
 import numpy as np
 import io
 import contextlib
+import plotly.graph_objects as go
+import pandas as pd
 import monte_carlo_2
 import importlib
 import gc
@@ -81,6 +83,8 @@ else:
     btn_text = "Générer la Matrice"
     st.sidebar.divider()
     tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+    list_coupons = np.arange(0.25, 5.25, 0.25)
+    coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D (%)", [f"{c:.2f}" for c in list_coupons], index=len(list_coupons)//2)
 
 lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
 
@@ -217,7 +221,6 @@ if lancer:
             st.header("Matrice d'Équivalence PR")
             
             # Paramètres de la grille
-            list_coupons = np.arange(0.25, 5.25, 0.25)
             list_pdis = np.arange(40.0, 105.0, 5.0)
             list_barrieres = np.arange(100.0, 155.0, 5.0)
             
@@ -257,9 +260,53 @@ if lancer:
                         lambda x: f"{x:.2f}%" if abs(x - target_payoff) <= tolerance else ""
                     )
                 
-                # Affichage
+                # Affichage de la matrice
                 st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
                 st.dataframe(df_filtered, use_container_width=True, height=600)
+                
+                # 4. Vue 3D
+                st.subheader("Vue 3D de l'Équivalence")
+                st.markdown(f"Topographie des payoffs PR pour un **Coupon fixé à {coupon_3d}%**.")
+                
+                df_plot = df[[coupon_3d]].reset_index()
+                df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
+                df_plot['Barrière'] = df_plot['Barrière'].str.replace('%', '').astype(float)
+                pivot_df = df_plot.pivot(index='PDI', columns='Barrière', values=coupon_3d)
+                
+                x_vals = pivot_df.columns.values.astype(float)
+                y_vals = pivot_df.index.values.astype(float)
+                z_vals = pivot_df.values.astype(float)
+                z_target = np.full(z_vals.shape, float(target_payoff))
+                
+                # Make 2D meshgrids for x and y to be 100% robust
+                x_mesh, y_mesh = np.meshgrid(x_vals, y_vals)
+                
+                fig3d = go.Figure()
+                # Montagne des Payoffs
+                fig3d.add_trace(go.Surface(
+                    z=z_vals, x=x_mesh, y=y_mesh, 
+                    colorscale='Viridis', name="Payoff PR", showscale=False
+                ))
+                # Plaque de verre (Target)
+                # Utilisation d'une couleur fixe pour éviter le crash de colorscale sur une surface plate
+                fig3d.add_trace(go.Surface(
+                    z=z_target, x=x_mesh, y=y_mesh, 
+                    surfacecolor=np.zeros_like(z_target),
+                    colorscale=[[0, 'red'], [1, 'red']], 
+                    opacity=0.5, name="Cible Decrement", showscale=False,
+                    cmin=0, cmax=1
+                ))
+                
+                fig3d.update_layout(
+                    scene=dict(
+                        xaxis_title='Barrière Initiale (%)',
+                        yaxis_title='Niveau PDI (%)',
+                        zaxis_title='Payoff (%)'
+                    ),
+                    height=700,
+                    margin=dict(l=0, r=0, b=0, t=40)
+                )
+                st.plotly_chart(fig3d, use_container_width=True)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
