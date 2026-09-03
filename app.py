@@ -40,7 +40,10 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
         d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_pct_{i}")
         rp = st.number_input(f"Drift Total Return P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
         vol = st.number_input(f"Volatilité P{i+1} (%)", value=def_vol, format="%.1f", key=f"vol_pct_{i}")
-        yi = st.number_input(f"Yield P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
+        if mode != "Surface 3D (Decrement)":
+            yi = st.number_input(f"Yield P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
+        else:
+            yi = def_yi
         st.divider()
         
         somme_annees += d
@@ -63,11 +66,17 @@ with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Se
     decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
 
 with st.sidebar.expander("4. Produit Autocall", expanded=False):
-    st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
-    barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
-    niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+    if mode != "Surface 3D (Decrement)":
+        st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
+        barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
+        niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+        degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, help="Baisse en pourcentage du niveau initial à chaque constatation après la période de lock-up.")
+    else:
+        barriere_rappel_pct = 1.0
+        niveau_pdi_pct = 0.5
+        degressivite = 0.0
+        
     coupon_periode = st.number_input("Coupon par observation (%)", value=2.0, step=0.1)
-    degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, help="Baisse en pourcentage du niveau initial à chaque constatation après la période de lock-up.")
     non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
     frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
 
@@ -271,7 +280,8 @@ if lancer:
             st.header("Surface 3D (Decrement)")
             
             # Paramètres de la grille (nouveaux paramètres demandés)
-            list_coupons = np.arange(0.25, 5.25, 0.25)
+            list_coupons = [float(coupon_periode)]
+
             list_pdis = np.arange(35.0, 85.0, 5.0)
             list_barrieres = np.arange(80.0, 125.0, 5.0)
             
@@ -299,10 +309,11 @@ if lancer:
                 )
                 
                 # Extraction des données pour Plotly
-                df_plot = df[[coupon_3d]].reset_index()
+                coupon_col = f"{coupon_periode:.2f}%"
+                df_plot = df[[coupon_col]].reset_index()
                 df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
                 df_plot['Barrière'] = df_plot['Barrière'].str.replace('%', '').astype(float)
-                pivot_df = df_plot.pivot(index='PDI', columns='Barrière', values=coupon_3d)
+                pivot_df = df_plot.pivot(index='PDI', columns='Barrière', values=coupon_col)
                 
                 x_vals = pivot_df.columns.values.astype(float)
                 y_vals = pivot_df.index.values.astype(float)
@@ -317,7 +328,7 @@ if lancer:
                 ))
                 
                 fig3d.update_layout(
-                    title=f"Topographie des payoffs Decrement (Coupon fixé à {coupon_3d})",
+                    title=f"Topographie des payoffs Decrement (Coupon fixé à {coupon_periode:.2f}%)",
                     scene=dict(
                         xaxis_title='Barrière Initiale (%)',
                         yaxis_title='Niveau PDI (%)',
