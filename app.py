@@ -79,6 +79,8 @@ elif mode == "Analyse de Sensibilité (Spots)":
     btn_text = "Lancer l'Analyse de Sensibilité"
 else:
     btn_text = "Générer la Matrice"
+    st.sidebar.divider()
+    tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 
 lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
 
@@ -214,12 +216,10 @@ if lancer:
         elif mode == "Matrice d'Équivalence (PR)":
             st.header("Matrice d'Équivalence PR")
             
-            tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
-            
             # Paramètres de la grille
-            list_coupons = np.arange(3.0, 7.5, 0.5)
-            list_pdis = np.arange(40, 75, 5)
-            list_barrieres = [90.0, 95.0, 100.0]
+            list_coupons = np.arange(0.25, 5.25, 0.25)
+            list_pdis = np.arange(40.0, 85.0, 5.0)
+            list_barrieres = np.arange(150.0, 95.0, -5.0)
             
             with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
                 spot = float(niveau_initial)
