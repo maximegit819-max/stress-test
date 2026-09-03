@@ -169,7 +169,7 @@ class SimulationEngine:
         results = []
         for pdi_pct in list_pdis:
             for barriere_pct in list_barrieres:
-                row_data = {'PDI': f"{pdi_pct:.0f}", 'Barrière': f"{barriere_pct:.0f}"}
+                row_data = {'PDI': f"{pdi_pct:.0f}%", 'Barrière': f"{barriere_pct:.0f}%"}
                 for coupon_pct in list_coupons:
                     test_product = AutocallProduct(
                         barriere_rappel=index.niveau_initial * (barriere_pct / 100.0),
