@@ -221,46 +221,45 @@ if lancer:
             list_pdis = np.arange(40, 75, 5)
             list_barrieres = [90.0, 95.0, 100.0]
             
-            if st.sidebar.button("Générer la Matrice", type="primary"):
-                with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
-                    spot = float(niveau_initial)
-                    pdi_niveau = spot * niveau_pdi_pct
-                    barriere_rappel = spot * barriere_rappel_pct
+            with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
+                spot = float(niveau_initial)
+                pdi_niveau = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
+                
+                # 1. Calcul du Payoff Cible sur Decrement
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(
+                    barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
+                    non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
+                    degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                )
+                scenario_krach = MarketScenario(
+                    annees=int(annees), jours_par_an=252,
+                    config_regimes=mes_regimes_input
+                )
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
+                _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                target_payoff = np.mean(payoffs_dec) * 100
+                
+                st.success(f"**Payoff Cible (Decrement)** : {target_payoff:.2f}%  *(Tolérance : ±{tolerance}%)*")
+                
+                # 2. Génération de la grille PR
+                df = moteur.generer_matrice_structurelle(
+                    mon_indice_dec, scenario_krach, mon_autocall, 
+                    list_coupons, list_pdis, list_barrieres
+                )
                     
-                    # 1. Calcul du Payoff Cible sur Decrement
-                    mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
-                    mon_autocall = AutocallProduct(
-                        barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
-                        non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
-                        degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                # 3. Filtrage Visuel
+                df_filtered = df.copy()
+                for col in df_filtered.columns:
+                    df_filtered[col] = df_filtered[col].apply(
+                        lambda x: f"{x:.2f}%" if abs(x - target_payoff) <= tolerance else ""
                     )
-                    scenario_krach = MarketScenario(
-                        annees=int(annees), jours_par_an=252,
-                        config_regimes=mes_regimes_input
-                    )
-                    moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
-                    _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
-                    
-                    target_payoff = np.mean(payoffs_dec) * 100
-                    
-                    st.success(f"**Payoff Cible (Decrement)** : {target_payoff:.2f}%  *(Tolérance : ±{tolerance}%)*")
-                    
-                    # 2. Génération de la grille PR
-                    df = moteur.generer_matrice_structurelle(
-                        mon_indice_dec, scenario_krach, mon_autocall, 
-                        list_coupons, list_pdis, list_barrieres
-                    )
-                    
-                    # 3. Filtrage Visuel
-                    df_filtered = df.copy()
-                    for col in df_filtered.columns:
-                        df_filtered[col] = df_filtered[col].apply(
-                            lambda x: f"{x:.2f}%" if abs(x - target_payoff) <= tolerance else ""
-                        )
-                    
-                    # Affichage
-                    st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
-                    st.dataframe(df_filtered, use_container_width=True, height=600)
+                
+                # Affichage
+                st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
+                st.dataframe(df_filtered, use_container_width=True, height=600)
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
