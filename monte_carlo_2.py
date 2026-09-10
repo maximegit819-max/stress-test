@@ -159,6 +159,16 @@ class SimulationEngine:
         
         return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
+    def calculer_duration(self, est_rappele, obs_de_rappel, product: AutocallProduct, scenario: MarketScenario):
+        jours_par_mois = scenario.jours_par_an // 12
+        jours_entre_observations = jours_par_mois * product.frequence_obs_mois
+        annees_par_obs = jours_entre_observations / scenario.jours_par_an
+        
+        annees_rappel = obs_de_rappel[est_rappele] * annees_par_obs
+        annees_non_rappel = np.full(np.sum(~est_rappele), scenario.annees)
+        
+        return (np.sum(annees_rappel) + np.sum(annees_non_rappel)) / len(est_rappele)
+
     def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres, use_decrement=False):
         import pandas as pd
         
@@ -393,7 +403,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes):
+    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes, durations_dec=None):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -589,7 +599,29 @@ class SimulationEngine:
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
         )
         
-        return fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff
+        # ==========================================
+        # GRAPHIQUE 5 : Expected Maturity (Duration)
+        # ==========================================
+        fig_duration = go.Figure()
+        if durations_dec is not None:
+            fig_duration.add_trace(
+                go.Scatter(x=spots_test, y=durations_dec, mode='lines+markers',
+                           name='Duration Espérée (Decrement)',
+                           line=dict(color='purple', width=2), marker=dict(symbol='diamond', size=8))
+            )
+            
+            maturite_max = sum(r['duree_annees'] for r in mes_regimes)
+            fig_duration.add_hline(y=maturite_max, line_dash="dash", line_color="black", annotation_text=f"Maturité Maximale ({maturite_max} ans)", annotation_position="bottom right")
+            fig_duration.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
+            fig_duration.update_layout(
+                title=dict(text=f"<b>5. Évolution de l'Expected Maturity (Duration)</b>", font=dict(size=18)),
+                xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+                yaxis=dict(title="Duration (Années)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
+                legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
+                plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
+            )
+
+        return fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff, fig_duration
 
     def plot_distributions(self, traj_pr, traj_dec, product, scenario):
         import plotly.graph_objects as go
