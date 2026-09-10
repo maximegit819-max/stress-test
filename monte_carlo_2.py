@@ -235,7 +235,6 @@ class SimulationEngine:
             pr_sous_pdi = valeurs_finales_pr[en_dessous_pdi]
             
             bins = [0, 10, 25, 50, 75, 90, 100]
-            print("**Moyennes par tranches de centiles (sur les trajectoires sous le PDI)**")
             for i in range(len(bins)-1):
                 p_low = bins[i]
                 p_high = bins[i+1]
@@ -252,7 +251,13 @@ class SimulationEngine:
                     moy_pr = np.mean(pr_sous_pdi[mask])
                     label = f"{p_low}%-{p_high}%"
                     bin_stats.append({"label": label, "moy_dec": (moy_dec/niveau_initial)*100, "moy_pr": (moy_pr/niveau_initial)*100})
-                    print(f"- Tranche [{label}] : Moyenne Decrement = {(moy_dec/niveau_initial)*100:.2f}% | Moyenne PR = {(moy_pr/niveau_initial)*100:.2f}%")
+            
+            bin_stats.append({
+                "label": "Moyenne Globale", 
+                "moy_dec": (moy_dec_en_dessous / niveau_initial) * 100, 
+                "moy_pr": (moy_pr_en_dessous / niveau_initial) * 100,
+                "is_global": True
+            })
             
             pct_levels = [10, 25, 50, 75, 90]
             pct_values = [np.percentile(dec_sous_pdi, p) for p in pct_levels]
@@ -546,7 +551,7 @@ class SimulationEngine:
 
         return fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration
 
-    def plot_distributions(self, traj_pr, traj_dec, product, scenario):
+    def plot_distributions(self, traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, product, scenario):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -556,16 +561,38 @@ class SimulationEngine:
         valeurs_finales_dec = np.clip(traj_dec[:, -1], a_min=None, a_max=5000)
         valeurs_finales_pr = np.clip(traj_pr[:, -1], a_min=None, a_max=5000)
         
+        # 1. Bis. Distribution réelle avec rappels
+        valeurs_reelles_dec = traj_dec[:, -1].copy()
+        valeurs_reelles_dec[est_rappele_dec] = product.barriere_rappel
+        valeurs_reelles_dec = np.clip(valeurs_reelles_dec, a_min=None, a_max=5000)
+        
+        valeurs_reelles_pr = traj_pr[:, -1].copy()
+        valeurs_reelles_pr[est_rappele_pr] = product.barriere_rappel
+        valeurs_reelles_pr = np.clip(valeurs_reelles_pr, a_min=None, a_max=5000)
+        
+        tickvals_dist = list(range(0, 5001, 500))
+        ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
+        
         # Graphique Decrement
         fig_dist_dec = go.Figure()
         fig_dist_dec.add_trace(go.Histogram(x=valeurs_finales_dec, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Decrement", marker_color='blue', opacity=0.75))
         fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
-        tickvals_dist = list(range(0, 5001, 500))
-        ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
 
         fig_dist_dec.update_layout(
             title="Distribution des Niveaux Finaux (Decrement - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
+            yaxis_title="Nombre de trajectoires",
+            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
+        )
+        
+        # Graphique Decrement Réel
+        fig_dist_dec_reelle = go.Figure()
+        fig_dist_dec_reelle.add_trace(go.Histogram(x=valeurs_reelles_dec, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Decrement Réel", marker_color='darkblue', opacity=0.75))
+        fig_dist_dec_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
+        fig_dist_dec_reelle.add_vline(x=product.barriere_rappel, line_dash="solid", line_color="green", annotation_text="Barrière Rappel")
+        fig_dist_dec_reelle.update_layout(
+            title="Distribution Finale Réelle (Produit Autocall Decrement)",
+            xaxis_title="Niveau Final Payé (pts)", 
             yaxis_title="Nombre de trajectoires",
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
@@ -577,6 +604,18 @@ class SimulationEngine:
         fig_dist_pr.update_layout(
             title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
+            yaxis_title="Nombre de trajectoires",
+            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
+        )
+        
+        # Graphique Price Return Réel
+        fig_dist_pr_reelle = go.Figure()
+        fig_dist_pr_reelle.add_trace(go.Histogram(x=valeurs_reelles_pr, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Price Return Réel", marker_color='darkorange', opacity=0.75))
+        fig_dist_pr_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
+        fig_dist_pr_reelle.add_vline(x=product.barriere_rappel, line_dash="solid", line_color="green", annotation_text="Barrière Rappel")
+        fig_dist_pr_reelle.update_layout(
+            title="Distribution Finale Réelle (Produit Autocall PR)",
+            xaxis_title="Niveau Final Payé (pts)", 
             yaxis_title="Nombre de trajectoires",
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
@@ -614,7 +653,7 @@ class SimulationEngine:
             xaxis=dict(dtick=1)
         )
         
-        return fig_dist_dec, fig_dist_pr, fig_dist_rappel
+        return fig_dist_dec, fig_dist_pr, fig_dist_rappel, fig_dist_dec_reelle, fig_dist_pr_reelle
 
     def plot_binned_averages(self, bin_stats):
         import plotly.graph_objects as go
@@ -622,14 +661,18 @@ class SimulationEngine:
         labels = [b['label'] for b in bin_stats]
         dec_vals = [b['moy_dec'] for b in bin_stats]
         pr_vals = [b['moy_pr'] for b in bin_stats]        
+        
+        colors_dec = ['darkblue' if b.get('is_global') else 'blue' for b in bin_stats]
+        colors_pr = ['darkorange' if b.get('is_global') else 'orange' for b in bin_stats]
+
         fig = go.Figure()
         fig.add_trace(go.Bar(
             x=labels, y=dec_vals,
-            name='Decrement', marker_color='blue'
+            name='Decrement', marker_color=colors_dec
         ))
         fig.add_trace(go.Bar(
             x=labels, y=pr_vals,
-            name='Price Return', marker_color='orange'
+            name='Price Return', marker_color=colors_pr
         ))
         
         fig.update_layout(
