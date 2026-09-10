@@ -413,28 +413,6 @@ class SimulationEngine:
         # --- Calculs Mathématiques ---
         # 1. Écart de sur-perte
         ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
-        
-        from scipy.signal import savgol_filter
-        
-        # L'écart entre deux spots (ici 50) pour avoir la bonne échelle de dérivée
-        delta_spot = spots_array[1] - spots_array[0]
-
-        # 2. Dérivées Secondes (Accélération du risque) via Savitzky-Golay
-        # Ce filtre calcule directement la dérivée (deriv=2) en ajustant un polynôme local (polyorder=4)
-        # sur une fenêtre glissante (window_length=25).
-        d2_prob = savgol_filter(probs_pdi_dec, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
-        d2_prob = np.maximum(d2_prob, 0)
-        
-        # Pour l'écart (Sur-perte)
-        d2_ecart = savgol_filter(ecarts, window_length=25, polyorder=4, deriv=2, delta=delta_spot)
-        d2_ecart = np.maximum(d2_ecart, 0)
-        
-        # 3. Dérivées Premières (Vitesse du risque pour le Scoring)
-        d1_prob = -savgol_filter(probs_pdi_dec, window_length=25, polyorder=4, deriv=1, delta=delta_spot)
-        d1_prob = np.maximum(d1_prob, 0)
-        
-        d1_ecart = -savgol_filter(ecarts, window_length=25, polyorder=4, deriv=1, delta=delta_spot)
-        d1_ecart = np.maximum(d1_ecart, 0)
 
         x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
         x_tick_text = []
@@ -448,57 +426,29 @@ class SimulationEngine:
             annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Yield {regime['yield_initial']*100:.1f}%<br>"
 
         # ==========================================
-        # GRAPHIQUE 1 : Probabilités + Accélération (D2)
+        # GRAPHIQUE 1 : Probabilités
         # ==========================================
-        fig_prob = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_prob = go.Figure()
 
         fig_prob.add_trace(
             go.Scatter(x=spots_test, y=probs_pdi_dec, mode='lines+markers',
                        name='Probabilité PDI (Dec)',
-                       line=dict(color='orange', width=2), marker=dict(size=6)),
-            secondary_y=False
+                       line=dict(color='orange', width=2), marker=dict(size=6))
         )
         fig_prob.add_trace(
             go.Scatter(x=spots_test, y=probs_rappel, mode='lines+markers',
                        name='Probabilité Autocall',
-                       line=dict(color='green', width=2), marker=dict(symbol='diamond', size=6)),
-            secondary_y=False
-        )
-        # Dérivée Seconde
-        fig_prob.add_trace(
-            go.Scatter(x=spots_test, y=d2_prob, mode='lines',
-                       name='Accélération du Risque (Dérivée 2nde)',
-                       line=dict(color='orange', width=0), fill='tozeroy', opacity=0.15),
-            secondary_y=True
+                       line=dict(color='green', width=2), marker=dict(symbol='diamond', size=6))
         )
 
         fig_prob.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_prob.update_layout(
-            title=dict(text=f"<b>1. Probabilités & Accélération du Risque PDI</b>", font=dict(size=18)),
+            title=dict(text=f"<b>1. Probabilités</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Probabilités (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            yaxis2=dict(title="Accélération du Risque", showgrid=False, showticklabels=False), # Masquer l'échelle D2 car elle est abstraite
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
-        )
-        
-        # ==========================================
-        # GRAPHIQUE 1 BIS : Vitesse du Risque PDI (Dérivée 1ère)
-        # ==========================================
-        fig_prob_d1 = go.Figure()
-        fig_prob_d1.add_trace(
-            go.Scatter(x=spots_test, y=d1_prob, mode='lines',
-                       name='Vitesse du Risque (Score d1)',
-                       line=dict(color='orange', width=2), fill='tozeroy', opacity=0.3)
-        )
-        fig_prob_d1.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-        fig_prob_d1.update_layout(
-            title=dict(text=f"<b>1 Bis. Vitesse d'augmentation du Risque PDI (Dérivée 1ère)</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Vitesse du risque", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=500
         )
 
         # ==========================================
@@ -528,51 +478,24 @@ class SimulationEngine:
         )
 
         # ==========================================
-        # GRAPHIQUE 3 : Sur-perte & Dérivée Seconde
+        # GRAPHIQUE 3 : Sur-perte
         # ==========================================
-        fig_ecart = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_ecart = go.Figure()
 
         fig_ecart.add_trace(
             go.Scatter(x=spots_test, y=ecarts, mode='lines+markers',
                        name='Sur-perte (Écart PR - Dec)',
-                       line=dict(color='red', width=2), marker=dict(symbol='x', size=6)),
-            secondary_y=False
-        )
-        # Dérivée Seconde de l'écart
-        fig_ecart.add_trace(
-            go.Scatter(x=spots_test, y=d2_ecart, mode='lines',
-                       name='Accélération de la Sur-perte',
-                       line=dict(color='red', width=0), fill='tozeroy', opacity=0.15),
-            secondary_y=True
+                       line=dict(color='red', width=2), marker=dict(symbol='x', size=6))
         )
 
         fig_ecart.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_ecart.update_layout(
-            title=dict(text=f"<b>3. Sur-perte du Decrement & Accélération</b>", font=dict(size=18)),
+            title=dict(text=f"<b>3. Sur-perte du Decrement</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Sur-perte (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            yaxis2=dict(title="Accélération", showgrid=False, showticklabels=False), # Échelle masquée
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
-        )
-        
-        # ==========================================
-        # GRAPHIQUE 3 BIS : Vitesse de la Sur-perte (Dérivée 1ère)
-        # ==========================================
-        fig_ecart_d1 = go.Figure()
-        fig_ecart_d1.add_trace(
-            go.Scatter(x=spots_test, y=d1_ecart, mode='lines',
-                       name='Vitesse de la Sur-perte (Score d1)',
-                       line=dict(color='red', width=2), fill='tozeroy', opacity=0.3)
-        )
-        fig_ecart_d1.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-        fig_ecart_d1.update_layout(
-            title=dict(text=f"<b>3 Bis. Vitesse de la Sur-perte (Dérivée 1ère)</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Vitesse de la sur-perte", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=500
         )
         
         # ==========================================
@@ -621,7 +544,7 @@ class SimulationEngine:
                 plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
             )
 
-        return fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff, fig_duration
+        return fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration
 
     def plot_distributions(self, traj_pr, traj_dec, product, scenario):
         import plotly.graph_objects as go

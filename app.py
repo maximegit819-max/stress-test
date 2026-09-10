@@ -218,7 +218,7 @@ if lancer:
             
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
-            fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff, fig_duration = moteur.plot_sensibilite(
+            fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration = moteur.plot_sensibilite(
                 spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
                 decrement_annuel, yield_fixe, mes_regimes_input, durations_dec
             )
@@ -228,12 +228,10 @@ if lancer:
             status_text.empty()
             
             st.plotly_chart(fig_prob, use_container_width=True)
-            st.plotly_chart(fig_prob_d1, use_container_width=True)
             st.plotly_chart(fig_duration, use_container_width=True)
             st.plotly_chart(fig_payoff, use_container_width=True)
             st.plotly_chart(fig_niveaux, use_container_width=True)
             st.plotly_chart(fig_ecart, use_container_width=True)
-            st.plotly_chart(fig_ecart_d1, use_container_width=True)
 
         elif mode == "Matrice d'Équivalence (PR)":
             st.header("Matrice d'Équivalence PR")
