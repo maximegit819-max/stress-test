@@ -1,333 +1,349 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine, text
-import os
-from dotenv import load_dotenv
+import io
+import contextlib
 import plotly.graph_objects as go
-import datetime
+import pandas as pd
+import monte_carlo_2
+import importlib
+import gc
 
-# 1. Configuration
-st.set_page_config(page_title="Asset 360", layout="wide")
+importlib.reload(monte_carlo_2)
+from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
 
-@st.cache_resource
-def init_connection():
-    try:
-        db_url = st.secrets["SUPABASE_DB_URL"]
-    except:
-        load_dotenv()
-        db_url = os.getenv("SUPABASE_DB_URL")
+st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
+
+st.title("Simulateur Monte Carlo")
+
+# --- SIDEBAR ---
+mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"])
+st.sidebar.divider()
+
+st.sidebar.header("Paramètres")
+
+with st.sidebar.expander("1. Durée", expanded=True):
+    annees = st.number_input("Années totales", value=10, min_value=1)
+
+with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
+    nb_periodes = st.number_input("Nombre de Périodes", value=3, min_value=1, step=1)
+    
+    mes_regimes_input = []
+    somme_annees = 0
+    for i in range(int(nb_periodes)):
+        st.markdown(f"**Période {i+1}**")
+        def_d = 3 if i==0 else (2 if i==1 else 5)
+        def_rp = 4.0 if i==0 else (-15.0 if i==1 else 5.0)
+        def_vol = 15.0 if i==0 else (35.0 if i==1 else 18.0)
+        def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
+        def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
         
-    if db_url and db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-    return create_engine(db_url)
-
-engine = init_connection()
-
-# 2. Récupération des données
-@st.cache_data(ttl=3600*24)
-def load_assets():
-    with engine.connect() as conn:
-        return pd.read_sql("SELECT * FROM asset", conn)
-
-@st.cache_data(ttl=3600*24)
-def load_all_prices():
-    # On charge tous les prix pour calculer les corrélations ensuite
-    with engine.connect() as conn:
-        df = pd.read_sql("SELECT asset_id, date, close FROM historical_price", conn)
-        df['date'] = pd.to_datetime(df['date'])
-        # Nettoyage des doublons éventuels
-        # Création du pivot : dates en index, asset_id en colonnes
-        pivot = df.pivot(index='date', columns='asset_id', values='close')
-        pivot = pivot.sort_index().ffill()
-        return pivot
-
-with st.spinner("Initialisation de la base de données..."):
-    assets_df = load_assets()
-    prices_pivot = load_all_prices()
-
-# --- Interface Principale ---
-st.title("Vue Détaillée Actif")
-
-# Menu de sélection intelligent (Recherche par nom ou ticker)
-assets_df['display_name'] = assets_df['name'] + " (" + assets_df['ticker_bloomberg'].fillna('') + ")"
-asset_options = dict(zip(assets_df['display_name'], assets_df['asset_id']))
-
-selected_asset_name = st.selectbox(
-    "Recherchez un actif par nom ou ticker :",
-    options=sorted(asset_options.keys())
-)
-
-if not selected_asset_name:
-    st.stop()
-
-selected_asset_id = asset_options[selected_asset_name]
-asset_info = assets_df[assets_df['asset_id'] == selected_asset_id].iloc[0]
-
-st.divider()
-
-# --- 1. Fiche d'Identité ---
-st.subheader("Fiche d'Identité")
-
-is_index = asset_info.get('asset_type') == 'INDEX' or pd.notna(asset_info.get('issuer'))
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("Nom", str(asset_info['name'])[:40])
-    st.metric("Ticker Bloomberg", str(asset_info.get('ticker_bloomberg', 'N/A')))
-with col2:
-    st.metric("Type", str(asset_info.get('asset_type', 'N/A')))
-    st.metric("ISIN", str(asset_info.get('isin', 'N/A')))
-with col3:
-    st.metric("Thème / Secteur", str(asset_info.get('sector', 'N/A')))
-    st.metric("Sous Type", str(asset_info.get('asset_subtype', 'N/A')))
-with col4:
-    st.metric("Pays", str(asset_info.get('country', 'N/A')))
-    st.metric("Devise", str(asset_info.get('currency', 'N/A')))
-
-if is_index and pd.notna(asset_info.get('issuer')):
-    st.markdown("---")
-    st.markdown("**Caractéristiques de l'Indice (Run Hebdo)**")
-    idx_col1, idx_col2, idx_col3, idx_col4 = st.columns(4)
-    with idx_col1:
-        st.metric("Émetteur", str(asset_info.get('issuer', 'N/A')))
-        st.metric("Sous Secteur", str(asset_info.get('sub_sector', 'N/A')))
-    with idx_col2:
-        div_val = asset_info.get('dividend_yield')
-        div_str = f"{float(div_val)*100:.2f} %" if pd.notna(div_val) and div_val is not None else "N/A"
-        st.metric("Dividende distribué en 2025 avec effet de réinvestissement", div_str)
-        
-        comp_count = asset_info.get('components_count')
-        comp_str = str(int(comp_count)) if pd.notna(comp_count) and comp_count is not None else "N/A"
-        st.metric("Composants", comp_str)
-    with idx_col3:
-        st.markdown("**Construction**")
-        st.write(str(asset_info.get('construction', 'N/A')))
-    with idx_col4:
-        st.markdown("**Spécificités**")
-        st.write(str(asset_info.get('specificities', 'N/A')))
-
-
-st.divider()
-
-# --- Préparation des séries de prix pour l'actif ---
-if selected_asset_id not in prices_pivot.columns:
-    st.warning("Aucun historique de prix disponible pour cet actif (base de données vide pour ce ticker).")
-    st.stop()
-
-asset_prices = prices_pivot[selected_asset_id].dropna()
-if len(asset_prices) == 0:
-    st.warning("Aucun historique de prix disponible pour cet actif (base de données vide pour ce ticker).")
-    st.stop()
-
-daily_returns = asset_prices.pct_change(fill_method=None).dropna()
-current_date = asset_prices.index.max()
-current_price = asset_prices.iloc[-1]
-start_of_year = pd.Timestamp(year=current_date.year, month=1, day=1)
-
-# Fonction utilitaire pour récupérer le prix au plus proche d'une date
-def get_price_at(date_target):
-    available_dates = asset_prices[asset_prices.index <= date_target]
-    if len(available_dates) == 0:
-        return np.nan
-    return available_dates.iloc[-1]
-
-def get_perf(days=None, ytd=False):
-    if ytd:
-        # On cherche le dernier prix de l'année précédente pour le calcul YTD
-        end_of_prev_year = pd.Timestamp(year=current_date.year - 1, month=12, day=31)
-        old_price = get_price_at(end_of_prev_year)
-    else:
-        old_price = get_price_at(current_date - pd.Timedelta(days=days))
-    
-    if pd.isna(old_price): return np.nan
-    return ((current_price / old_price) - 1) * 100
-
-def get_vol(days=None, ytd=False):
-    if ytd:
-        end_of_prev_year = pd.Timestamp(year=current_date.year - 1, month=12, day=31)
-        sub_returns = daily_returns[daily_returns.index > end_of_prev_year]
-    else:
-        sub_returns = daily_returns[daily_returns.index >= current_date - pd.Timedelta(days=days)]
-    
-    if len(sub_returns) < 2: return np.nan
-    return sub_returns.std() * np.sqrt(252) * 100
-
-# --- 2. Tableaux Perf / Vol ---
-st.subheader(f"Performances et Volatilités (Dernier cours : {current_price:.2f})")
-
-perf_data = {
-    "5 Jours": get_perf(days=5),
-    "1 Mois": get_perf(days=30), # 30 jours calendaires ~ 21 jours ouvrés
-    "3 Mois": get_perf(days=90),
-    "YTD": get_perf(ytd=True),
-}
-
-vol_data = {
-    "5 Jours": get_vol(days=5),
-    "1 Mois": get_vol(days=30),
-    "3 Mois": get_vol(days=90),
-    "YTD": get_vol(ytd=True),
-    "1 An": get_vol(days=365),
-    "5 Ans": get_vol(days=365*5),
-}
-
-col_perf, col_vol = st.columns(2)
-
-with col_perf:
-    st.markdown("**Performances**")
-    perf_df = pd.DataFrame([perf_data]).T
-    perf_df.columns = ["Performance"]
-    perf_df.style.format("{:.2f} %").map(lambda x: 'color: green' if pd.notna(x) and x > 0 else 'color: red' if pd.notna(x) and x < 0 else ''),
-
-with col_vol:
-    st.markdown("**Volatilité Annualisée**")
-    vol_df = pd.DataFrame([vol_data]).T
-    vol_df.columns = ["Volatilité"]
-    st.dataframe(
-        vol_df.style.format("{:.2f} %"),
-        use_container_width=True
-    )
-
-st.divider()
-
-# --- 3. Graphique Technique ---
-st.subheader("Cours")
-
-# Mapping Benchmark
-benchmark_mapping = {
-    'FRANCE': 'CAC Index', 'France': 'CAC Index',
-    'GERMANY': 'DAX Index', 'ALLEMAGNE': 'DAX Index', 'Allemagne': 'DAX Index',
-    'US': 'SPX Index', 'USA': 'SPX Index', 'UNITED STATES': 'SPX Index', 'Amérique du Nord': 'SPX Index',
-    'BRITAIN': 'UKX Index',
-    'SWITZERLAND': 'SMI Index',
-    'JAPAN': 'NKY Index', 'Japon': 'NKY Index', 'Japon ': 'NKY Index',
-    'CHINE': 'SHSZ300 INDEX', 'Chine': 'SHSZ300 INDEX', 'CHINA': 'SHSZ300 INDEX',
-    'HONG KONG': 'HSI Index', 'MACAU': 'HSI Index',
-    # Europe élargie -> Euro Stoxx 50
-    'EUROPE': 'SX5E Index', 'EURO ZONE': 'SX5E Index', 'ZONE EURO': 'SX5E Index', 'Europe': 'SX5E Index',
-    'ITALY': 'SX5E Index', 'SPAIN': 'SX5E Index', 'PORTUGAL': 'SX5E Index', 'MALTA': 'SX5E Index',
-    'BELGIQUE': 'SX5E Index', 'BELGIUM': 'SX5E Index', 'NETHERLANDS': 'SX5E Index', 'LUXEMBOURG': 'SX5E Index',
-    'SWEDEN': 'SX5E Index', 'DENMARK': 'SX5E Index', 'NORWAY': 'SX5E Index', 'FINLAND': 'SX5E Index',
-    'FAROE ISLANDS': 'SX5E Index', 'AUSTRIA': 'SX5E Index', 'CZECH': 'SX5E Index', 'POLAND': 'SX5E Index',
-    'HUNGARY': 'SX5E Index', 'IRELAND': 'SX5E Index'
-}
-
-asset_country = str(asset_info.get('country', '')).strip()
-benchmark_ticker = benchmark_mapping.get(asset_country)
-benchmark_asset_id = None
-
-if benchmark_ticker:
-    bench_match = assets_df[assets_df['ticker_bloomberg'] == benchmark_ticker]
-    if not bench_match.empty:
-        benchmark_asset_id = bench_match.iloc[0]['asset_id']
-
-show_base_100 = False
-if benchmark_asset_id and benchmark_asset_id in prices_pivot.columns:
-    show_base_100 = st.checkbox(f"Afficher la comparaison avec le Benchmark {benchmark_ticker} (Base 100)", value=True)
-
-fig = go.Figure()
-
-if show_base_100:
-    bench_prices = prices_pivot[benchmark_asset_id].dropna()
-    start_date = asset_prices.index[0]
-    
-    asset_norm = (asset_prices / asset_prices.iloc[0]) * 100
-    
-    bench_sub = bench_prices[bench_prices.index >= start_date]
-    if not bench_sub.empty:
-        bench_norm = (bench_sub / bench_sub.iloc[0]) * 100
-        fig.add_trace(go.Scatter(
-            x=bench_norm.index, y=bench_norm, mode='lines', 
-            name=f'Benchmark ({benchmark_ticker})', 
-            line=dict(color='gray', width=1.5, dash='dot')
-        ))
-    
-    sma50 = asset_norm.rolling(window=50, min_periods=1).mean()
-    sma200 = asset_norm.rolling(window=200, min_periods=1).mean()
-    
-    fig.add_trace(go.Scatter(x=asset_norm.index, y=asset_norm, mode='lines', name='Prix (Base 100)', line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=sma50.index, y=sma50, mode='lines', name='SMA 50', line=dict(color='#00d2ff', width=1.5)))
-    fig.add_trace(go.Scatter(x=sma200.index, y=sma200, mode='lines', name='SMA 200', line=dict(color='#ff512f', width=1.5)))
-else:
-    sma50 = asset_prices.rolling(window=50, min_periods=1).mean()
-    sma200 = asset_prices.rolling(window=200, min_periods=1).mean()
-    
-    fig.add_trace(go.Scatter(x=asset_prices.index, y=asset_prices, mode='lines', name='Prix', line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=sma50.index, y=sma50, mode='lines', name='SMA 50', line=dict(color='#00d2ff', width=1.5)))
-    fig.add_trace(go.Scatter(x=sma200.index, y=sma200, mode='lines', name='SMA 200', line=dict(color='#ff512f', width=1.5)))
-
-fig.update_layout(hovermode="x unified", height=500, margin=dict(l=0, r=0, t=30, b=0))
-st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
-
-# --- 4. Analyse des Corrélations (1 an glissant) ---
-st.subheader("Corrélations sur 1 An Glissant")
-
-# Extraction des valeurs uniques pour les filtres
-subtypes = sorted([str(x) for x in assets_df['asset_subtype'].dropna().unique()])
-sectors = sorted([str(x) for x in assets_df['sector'].dropna().unique()])
-countries = sorted([str(x) for x in assets_df['country'].dropna().unique()])
-
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    filter_subtype = st.multiselect("Filtre Sous Type", options=subtypes)
-with col_f2:
-    filter_sector = st.multiselect("Filtre Secteur", options=sectors)
-with col_f3:
-    filter_country = st.multiselect("Filtre Pays", options=countries)
-
-with st.spinner("Calcul des corrélations en cours..."):
-    # 1 an glissant
-    one_year_ago = current_date - pd.Timedelta(days=365)
-    prices_1y = prices_pivot[prices_pivot.index >= one_year_ago]
-    
-    # Filtrage de l'univers
-    mask = pd.Series(True, index=assets_df.index)
-    if len(filter_subtype) > 0:
-        mask = mask & (assets_df['asset_subtype'].isin(filter_subtype))
-    if len(filter_sector) > 0:
-        mask = mask & (assets_df['sector'].isin(filter_sector))
-    if len(filter_country) > 0:
-        mask = mask & (assets_df['country'].isin(filter_country))
-        
-    valid_ids = assets_df[mask]['asset_id'].tolist()
-    
-    # On garde toujours l'actif sélectionné dans le calcul, même s'il n'est pas du type filtré
-    if selected_asset_id not in valid_ids:
-        valid_ids.append(selected_asset_id)
-    # Intersection avec les colonnes existantes
-    valid_ids = [vid for vid in valid_ids if vid in prices_1y.columns]
-    prices_1y = prices_1y[valid_ids]
-    
-    # Calcul des corrélations
-    returns_1y = prices_1y.pct_change(fill_method=None).dropna(how='all')
-    if selected_asset_id in returns_1y.columns:
-        corr_series = returns_1y.corrwith(returns_1y[selected_asset_id]).dropna()
-        
-        # On enlève la corrélation de l'actif avec lui-même (qui est toujours 1.0)
-        corr_series = corr_series.drop(index=selected_asset_id, errors='ignore')
-        
-        if len(corr_series) > 0:
-            # Récupérer les noms
-            id_to_name = dict(zip(assets_df['asset_id'], assets_df['display_name']))
-            corr_df = corr_series.reset_index()
-            corr_df.columns = ['asset_id', 'Correlation']
-            corr_df['Nom de l\'actif'] = corr_df['asset_id'].map(id_to_name)
-            
-            top_10 = corr_df.nlargest(10, 'Correlation')[['Nom de l\'actif', 'Correlation']]
-            bottom_10 = corr_df.nsmallest(10, 'Correlation')[['Nom de l\'actif', 'Correlation']]
-            
-            col_top, col_bottom = st.columns(2)
-            with col_top:
-                st.success("Les plus corrélés")
-                st.dataframe(top_10.style.format({'Correlation': "{:.4f}"}), use_container_width=True, hide_index=True)
-            with col_bottom:
-                st.error("Les moins corrélés")
-                st.dataframe(bottom_10.style.format({'Correlation': "{:.4f}"}), use_container_width=True, hide_index=True)
+        d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_pct_{i}")
+        rp = st.number_input(f"Drift Total Return P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
+        vol = st.number_input(f"Volatilité P{i+1} (%)", value=def_vol, format="%.1f", key=f"vol_pct_{i}")
+        if mode != "Surface 3D (Decrement)":
+            yi = st.number_input(f"Yield P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
         else:
-            st.info("Pas assez de données pour calculer les corrélations sur cet univers.")
+            yi = def_yi
+        st.divider()
+        
+        somme_annees += d
+        mes_regimes_input.append({
+            "duree_annees": d,
+            "r_perf": rp / 100.0,
+            "vol": vol / 100.0,
+            "yield_initial": yi / 100.0
+        })
+
+with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Sensibilité (Spots)")):
+    if mode in ["Scénario Fixe", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"]:
+        niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
     else:
-        st.warning("L'actif sélectionné n'a pas de données sur la dernière année.")
+        st.info("Le Niveau Initial est testé sur une plage.")
+        spot_min = st.number_input("Spot Min", value=400.0, step=50.0)
+        spot_max = st.number_input("Spot Max", value=2000.0, step=50.0)
+        nb_spots = st.number_input("Nombre d'itérations", value=33, step=1)
+        
+    decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
+
+with st.sidebar.expander("4. Produit Autocall", expanded=False):
+    if mode != "Surface 3D (Decrement)":
+        st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
+        barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
+        niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
+        degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, help="Baisse en pourcentage du niveau initial à chaque constatation après la période de lock-up.")
+    else:
+        barriere_rappel_pct = 1.0
+        niveau_pdi_pct = 0.5
+        degressivite = 0.0
+        
+    coupon_periode = st.number_input("Coupon par observation (%)", value=2.0, step=0.1)
+    non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
+    frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
+
+with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
+    nb_trajectoires = st.number_input("Nb Trajectoires", value=2000 if mode == "Scénario Fixe" else 1000, step=500)
+    seed = st.number_input("Seed aléatoire", value=42, step=1)
+
+if mode == "Scénario Fixe":
+    btn_text = "Lancer le Scénario Fixe"
+elif mode == "Analyse de Sensibilité (Spots)":
+    btn_text = "Lancer l'Analyse de Sensibilité"
+elif mode == "Matrice d'Équivalence (PR)":
+    btn_text = "Générer la Matrice"
+    st.sidebar.divider()
+    tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+else:
+    btn_text = "Générer la Surface 3D"
+    st.sidebar.divider()
+    list_coupons = np.arange(0.25, 5.25, 0.25)
+    coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D", [f"{c:.2f}%" for c in list_coupons], index=len(list_coupons)//2)
+
+lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
+
+# --- MAIN AREA ---
+if lancer:
+    if somme_annees != annees:
+        st.error(f"La somme des durées des régimes ({somme_annees}) doit être exactement égale au total d'années ({annees}).")
+    else:
+        moteur = SimulationEngine(nb_trajectoires=int(nb_trajectoires), seed=int(seed))
+        scenario_krach = MarketScenario(config_regimes=mes_regimes_input, annees=int(annees))
+
+        if mode == "Scénario Fixe":
+            with st.spinner(f"Génération des {int(nb_trajectoires)} trajectoires de Monte Carlo en cours..."):
+                barriere_rappel = niveau_initial * barriere_rappel_pct
+                niveau_pdi = niveau_initial * niveau_pdi_pct
+                
+                mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=int(nb_trajectoires), seed=42)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                duration_dec = moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach)
+                
+                f = io.StringIO()
+                with contextlib.redirect_stdout(f):
+                    nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
+                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach)
+                stats_text = f.getvalue()
+                
+                st.success(f"Simulation terminée avec succès !")
+                
+                col_stats, col_graphs = st.columns([1, 2])
+                
+                with col_stats:
+                    st.metric(label="Duration Espérée (Expected Maturity)", value=f"{duration_dec:.2f} ans")
+                    st.subheader("Statistiques")
+                    st.markdown(stats_text)
+                    
+                with col_graphs:
+                    st.subheader("Visualisations")
+                    fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
+                    fig_dist_dec, fig_dist_pr, fig_dist_rappel = moteur.plot_distributions(traj_pr, traj_dec, mon_autocall, scenario_krach)
+                    if len(bin_stats) > 0:
+                        fig_binned = moteur.plot_binned_averages(bin_stats)
+                    else:
+                        fig_binned = None
+                    
+                    st.plotly_chart(fig1, use_container_width=True)
+                    st.plotly_chart(fig2, use_container_width=True)
+                    
+                    if fig_binned:
+                        st.subheader("Analyse par Tranches (Sous PDI)")
+                        st.plotly_chart(fig_binned, use_container_width=True)
+                        
+                    st.subheader("Distributions")
+                    st.plotly_chart(fig_dist_dec, use_container_width=True)
+                    st.plotly_chart(fig_dist_pr, use_container_width=True)
+                    st.plotly_chart(fig_dist_rappel, use_container_width=True)
+                    
+        elif mode == "Analyse de Sensibilité (Spots)": # Analyse de Sensibilité
+            spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
+            
+            probs_pdi_dec = []
+            probs_pdi_pr = []
+            probs_rappel = []
+            moyennes_pr_crash = []
+            moyennes_dec_crash = []
+            moyennes_payoffs_dec = []
+            moyennes_payoffs_pr = []
+            durations_dec = []
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, spot in enumerate(spots_test):
+                status_text.text(f"Simulation pour Spot = {spot:.0f} pts ({i+1}/{len(spots_test)})...")
+                
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                pdi_niveau_dyn = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
+                
+                mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
+                
+                # Réinitialiser la seed à chaque boucle pour que les courbes de sensibilité soient très lisses
+                moteur.seed = int(seed)
+                np.random.seed(moteur.seed)
+                
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                valeurs_finales_dec = traj_dec[:, -1]
+                valeurs_finales_pr = traj_pr[:, -1]
+                
+                en_dessous_pdi_dec = (valeurs_finales_dec < pdi_niveau_dyn) & (~est_rappele_dec)
+                en_dessous_pdi_pr = (valeurs_finales_pr < pdi_niveau_dyn) & (~est_rappele_pr)
+                
+                probs_pdi_dec.append(np.mean(en_dessous_pdi_dec) * 100)
+                probs_pdi_pr.append(np.mean(en_dessous_pdi_pr) * 100)
+                probs_rappel.append(np.mean(est_rappele_dec) * 100)
+                
+                if np.any(en_dessous_pdi_dec):
+                    moy_pr_crash_pct = (np.mean(valeurs_finales_pr[en_dessous_pdi_dec]) / spot) * 100
+                    moy_dec_crash_pct = (np.mean(valeurs_finales_dec[en_dessous_pdi_dec]) / spot) * 100
+                else:
+                    moy_pr_crash_pct = np.nan
+                    moy_dec_crash_pct = np.nan
+                    
+                moyennes_pr_crash.append(moy_pr_crash_pct)
+                moyennes_dec_crash.append(moy_dec_crash_pct)
+                moyennes_payoffs_dec.append(np.mean(payoffs_dec) * 100)
+                moyennes_payoffs_pr.append(np.mean(payoffs_pr) * 100)
+                durations_dec.append(moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach))
+                
+                del traj_pr, traj_dec, est_rappele_dec, est_rappele_pr, mon_indice_dec, mon_autocall
+                gc.collect()
+                
+                progress_bar.progress((i + 1) / len(spots_test))
+                
+            status_text.text("Génération du graphique interactif...")
+            
+            yield_fixe = mes_regimes_input[0]["yield_initial"]
+            
+            fig_prob, fig_niveaux, fig_ecart, fig_prob_d1, fig_ecart_d1, fig_payoff, fig_duration = moteur.plot_sensibilite(
+                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
+                decrement_annuel, yield_fixe, mes_regimes_input, durations_dec
+            )
+            
+            st.success("Analyse de Sensibilité terminée !")
+            progress_bar.empty()
+            status_text.empty()
+            
+            st.plotly_chart(fig_prob, use_container_width=True)
+            st.plotly_chart(fig_prob_d1, use_container_width=True)
+            st.plotly_chart(fig_duration, use_container_width=True)
+            st.plotly_chart(fig_payoff, use_container_width=True)
+            st.plotly_chart(fig_niveaux, use_container_width=True)
+            st.plotly_chart(fig_ecart, use_container_width=True)
+            st.plotly_chart(fig_ecart_d1, use_container_width=True)
+
+        elif mode == "Matrice d'Équivalence (PR)":
+            st.header("Matrice d'Équivalence PR")
+            
+            # Paramètres de la grille
+            list_pdis = np.arange(40.0, 105.0, 5.0)
+            list_barrieres = np.arange(100.0, 155.0, 5.0)
+            
+            with st.spinner("Calcul du Payoff Cible (Decrement) et génération de la matrice..."):
+                spot = float(niveau_initial)
+                pdi_niveau = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
+                
+                # 1. Calcul du Payoff Cible sur Decrement
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(
+                    barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
+                    non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
+                    degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                )
+                scenario_krach = MarketScenario(
+                    annees=int(annees), jours_par_an=252,
+                    config_regimes=mes_regimes_input
+                )
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
+                _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                
+                target_payoff = np.mean(payoffs_dec) * 100
+                
+                st.success(f"**Payoff Cible (Decrement)** : {target_payoff:.2f}%  *(Tolérance : ±{tolerance}%)*")
+                
+                # 2. Génération de la grille PR
+                df = moteur.generer_matrice_structurelle(
+                    mon_indice_dec, scenario_krach, mon_autocall, 
+                    list_coupons, list_pdis, list_barrieres
+                )
+                    
+                # 3. Filtrage Visuel
+                df_filtered = df.copy()
+                for col in df_filtered.columns:
+                    df_filtered[col] = df_filtered[col].apply(
+                        lambda x: f"{x:.2f}%" if abs(x - target_payoff) <= tolerance else ""
+                    )
+                
+                # Affichage de la matrice
+                st.markdown("Seules les combinaisons de structure PR atteignant le Payoff Cible sont affichées ci-dessous :")
+                st.dataframe(df_filtered, use_container_width=True, height=600)
+                
+        elif mode == "Surface 3D (Decrement)":
+            st.header("Surface 3D (Decrement)")
+            
+            # Paramètres de la grille (nouveaux paramètres demandés)
+            list_coupons = [float(coupon_periode)]
+
+            list_pdis = np.arange(35.0, 85.0, 5.0)
+            list_barrieres = np.arange(80.0, 125.0, 5.0)
+            
+            with st.spinner("Génération de la surface 3D sur l'indice Decrement..."):
+                spot = float(niveau_initial)
+                pdi_niveau = spot * niveau_pdi_pct
+                barriere_rappel = spot * barriere_rappel_pct
+                
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                mon_autocall = AutocallProduct(
+                    barriere_rappel=barriere_rappel, niveau_pdi=pdi_niveau, 
+                    non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), 
+                    degressivite=float(degressivite), coupon_periode=float(coupon_periode)
+                )
+                scenario_krach = MarketScenario(
+                    annees=int(annees), jours_par_an=252,
+                    config_regimes=mes_regimes_input
+                )
+                moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
+                
+                # Génération de la grille avec use_decrement=True
+                df = moteur.generer_matrice_structurelle(
+                    mon_indice_dec, scenario_krach, mon_autocall, 
+                    list_coupons, list_pdis, list_barrieres, use_decrement=True
+                )
+                
+                # Extraction des données pour Plotly
+                coupon_col = f"{coupon_periode:.2f}%"
+                df_plot = df[[coupon_col]].reset_index()
+                df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
+                df_plot['Barrière'] = df_plot['Barrière'].str.replace('%', '').astype(float)
+                pivot_df = df_plot.pivot(index='PDI', columns='Barrière', values=coupon_col)
+                
+                x_vals = pivot_df.columns.values.astype(float)
+                y_vals = pivot_df.index.values.astype(float)
+                z_vals = pivot_df.values.astype(float)
+                
+                x_mesh, y_mesh = np.meshgrid(x_vals, y_vals)
+                
+                fig3d = go.Figure()
+                fig3d.add_trace(go.Surface(
+                    z=z_vals, x=x_mesh, y=y_mesh, 
+                    colorscale='Viridis', name="Payoff Decrement", showscale=False
+                ))
+                
+                fig3d.update_layout(
+                    title=f"Topographie des payoffs Decrement (Coupon fixé à {coupon_periode:.2f}%)",
+                    scene=dict(
+                        xaxis_title='Barrière Initiale (%)',
+                        yaxis_title='Niveau PDI (%)',
+                        zaxis_title='Payoff (%)'
+                    ),
+                    height=700,
+                    margin=dict(l=0, r=0, b=0, t=40)
+                )
+                st.plotly_chart(fig3d, use_container_width=True)
+
+else:
+    st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
