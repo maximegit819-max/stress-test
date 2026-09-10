@@ -41,18 +41,18 @@ def main():
         scenario_krach = MarketScenario(config_regimes=mes_regimes, annees=annees, jours_par_an=jours_par_an)
         mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
         
-        pdi_niveau_dyn = spot * 0.50
-        mon_autocall = AutocallProduct(barriere_rappel=spot, niveau_pdi=pdi_niveau_dyn, non_call_period_mois=11, frequence_obs_mois=4)
+        pdi_pts = 500.0
+        mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4, degressivite=1.0, coupon_periode=2.0)
         
         # On garde un seed fixe pour avoir des courbes de sensibilité "lisses" entre chaque test de spot
         moteur = SimulationEngine(nb_trajectoires=nb_trajectoires, seed=42)
         
         # Lancement de la simulation
-        traj_pr, traj_dec, est_rappele = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+        traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
         
         # Affichage des statistiques complet (tel que demandé)
         nom_scenario = f"Spot {spot:.0f} pts"
-        moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, mon_autocall, scenario_krach)
+        moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
         
         # Calculs supplémentaires pour le graphique de sensibilité
         valeurs_finales_dec = traj_dec[:, -1]
