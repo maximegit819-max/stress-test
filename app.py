@@ -119,6 +119,7 @@ if lancer:
                 traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
                 
                 duration_dec = moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach)
+                duration_pr = moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, scenario_krach)
                 
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
@@ -132,6 +133,7 @@ if lancer:
                 
                 with col_stats:
                     st.metric(label="Duration Espérée (Expected Maturity)", value=f"{duration_dec:.2f} ans")
+                    st.caption(f"À titre comparatif, la duration du Price Return serait de {duration_pr:.2f} ans.")
                     st.subheader("Statistiques")
                     st.markdown(stats_text)
                     
@@ -165,6 +167,7 @@ if lancer:
             moyennes_payoffs_dec = []
             moyennes_payoffs_pr = []
             durations_dec = []
+            durations_pr = []
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -206,6 +209,7 @@ if lancer:
                 moyennes_payoffs_dec.append(np.mean(payoffs_dec) * 100)
                 moyennes_payoffs_pr.append(np.mean(payoffs_pr) * 100)
                 durations_dec.append(moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach))
+                durations_pr.append(moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, scenario_krach))
                 
                 del traj_pr, traj_dec, est_rappele_dec, est_rappele_pr, mon_indice_dec, mon_autocall
                 gc.collect()
@@ -218,7 +222,7 @@ if lancer:
             
             fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration = moteur.plot_sensibilite(
                 spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
-                decrement_annuel, yield_fixe, mes_regimes_input, durations_dec
+                decrement_annuel, yield_fixe, mes_regimes_input, durations_dec, durations_pr
             )
             
             st.success("Analyse de Sensibilité terminée !")

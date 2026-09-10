@@ -408,7 +408,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes, durations_dec=None):
+    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes, durations_dec=None, durations_pr=None):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -475,7 +475,7 @@ class SimulationEngine:
         fig_niveaux.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_niveaux.update_layout(
-            title=dict(text=f"<b>2. Niveaux Finaux Moyens en cas de Krach</b>", font=dict(size=18)),
+            title=dict(text=f"<b>4. Niveaux Finaux Moyens en cas de Krach</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Niveau Final (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
@@ -496,7 +496,7 @@ class SimulationEngine:
         fig_ecart.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
 
         fig_ecart.update_layout(
-            title=dict(text=f"<b>3. Sur-perte du Decrement</b>", font=dict(size=18)),
+            title=dict(text=f"<b>5. Sur-perte du Decrement</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Sur-perte (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
@@ -520,7 +520,7 @@ class SimulationEngine:
         fig_payoff.add_hline(y=100.0, line_dash="dash", line_color="black", annotation_text="Capital Garanti (100%)", annotation_position="bottom right")
         fig_payoff.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
         fig_payoff.update_layout(
-            title=dict(text=f"<b>4. Évolution de l'Espérance de Gain (Payoff Moyen)</b>", font=dict(size=18)),
+            title=dict(text=f"<b>3. Espérance de Gain (Payoff Moyen)</b>", font=dict(size=18)),
             xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Payoff Moyen (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
@@ -528,7 +528,7 @@ class SimulationEngine:
         )
         
         # ==========================================
-        # GRAPHIQUE 5 : Expected Maturity (Duration)
+        # GRAPHIQUE 2 : Expected Maturity (Duration)
         # ==========================================
         fig_duration = go.Figure()
         if durations_dec is not None:
@@ -537,12 +537,19 @@ class SimulationEngine:
                            name='Duration Espérée (Decrement)',
                            line=dict(color='purple', width=2), marker=dict(symbol='diamond', size=8))
             )
+        if durations_pr is not None:
+            fig_duration.add_trace(
+                go.Scatter(x=spots_test, y=durations_pr, mode='lines+markers',
+                           name='Duration Espérée (Price Return)',
+                           line=dict(color='orange', width=2, dash='dot'), marker=dict(symbol='diamond', size=8))
+            )
             
+        if durations_dec is not None or durations_pr is not None:
             maturite_max = sum(r['duree_annees'] for r in mes_regimes)
             fig_duration.add_hline(y=maturite_max, line_dash="dash", line_color="black", annotation_text=f"Maturité Maximale ({maturite_max} ans)", annotation_position="bottom right")
             fig_duration.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
             fig_duration.update_layout(
-                title=dict(text=f"<b>5. Évolution de l'Expected Maturity (Duration)</b>", font=dict(size=18)),
+                title=dict(text=f"<b>2. Évolution de l'Expected Maturity (Duration)</b>", font=dict(size=18)),
                 xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
                 yaxis=dict(title="Duration (Années)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
                 legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
