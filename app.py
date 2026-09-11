@@ -81,6 +81,8 @@ with st.sidebar.expander("4. Produit Autocall", expanded=False):
     frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
 
 with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
+    taux_actualisation_pct = st.number_input("Taux d'actualisation (%)", value=3.0, step=0.1)
+    taux_actualisation = taux_actualisation_pct / 100.0
     nb_trajectoires = st.number_input("Nb Trajectoires", value=2000 if mode == "Scénario Fixe" else 1000, step=500)
     seed = st.number_input("Seed aléatoire", value=42, step=1)
 
@@ -116,7 +118,7 @@ if lancer:
                 mon_indice_dec = DecrementIndex(niveau_initial=niveau_initial, decrement_annuel=decrement_annuel)
                 mon_autocall = AutocallProduct(barriere_rappel=barriere_rappel, niveau_pdi=niveau_pdi, non_call_period_mois=int(non_call_period_mois), frequence_obs_mois=int(frequence_obs_mois), degressivite=float(degressivite), coupon_periode=float(coupon_periode))
                 moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=int(nb_trajectoires), seed=42)
-                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=taux_actualisation)
                 
                 duration_dec = moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach)
                 duration_pr = moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, scenario_krach)
@@ -185,7 +187,7 @@ if lancer:
                 moteur.seed = int(seed)
                 np.random.seed(moteur.seed)
                 
-                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=taux_actualisation)
                 
                 valeurs_finales_dec = traj_dec[:, -1]
                 valeurs_finales_pr = traj_pr[:, -1]
@@ -259,7 +261,7 @@ if lancer:
                     config_regimes=mes_regimes_input
                 )
                 moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
-                _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+                _, _, _, _, payoffs_dec, _, _, _ = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=taux_actualisation)
                 
                 target_payoff = np.mean(payoffs_dec) * 100
                 
@@ -268,7 +270,7 @@ if lancer:
                 # 2. Génération de la grille PR
                 df = moteur.generer_matrice_structurelle(
                     mon_indice_dec, scenario_krach, mon_autocall, 
-                    list_coupons, list_pdis, list_barrieres
+                    list_coupons, list_pdis, list_barrieres, taux_actualisation=taux_actualisation
                 )
                     
                 # 3. Filtrage Visuel
@@ -311,7 +313,7 @@ if lancer:
                 # Génération de la grille avec use_decrement=True
                 df = moteur.generer_matrice_structurelle(
                     mon_indice_dec, scenario_krach, mon_autocall, 
-                    list_coupons, list_pdis, list_barrieres, use_decrement=True
+                    list_coupons, list_pdis, list_barrieres, use_decrement=True, taux_actualisation=taux_actualisation
                 )
                 
                 # Extraction des données pour Plotly

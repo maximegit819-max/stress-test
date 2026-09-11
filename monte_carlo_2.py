@@ -118,21 +118,28 @@ class AutocallProduct:
                 
         return est_rappele, obs_de_rappel
         
-    def calculate_payoff(self, trajectoires_dec, est_rappele, obs_de_rappel, niveau_initial):
+    def calculate_payoff(self, trajectoires_dec, est_rappele, obs_de_rappel, niveau_initial, scenario: MarketScenario, taux_actualisation: float = 0.0):
         nb_trajectoires = trajectoires_dec.shape[0]
         payoffs = np.zeros(nb_trajectoires)
         
+        # Pour l'actualisation
+        jours_par_mois = scenario.jours_par_an // 12
+        jours_entre_observations = jours_par_mois * self.frequence_obs_mois
+        annees_par_obs = jours_entre_observations / scenario.jours_par_an
+        
         # 1. Rappelés
         payoffs[est_rappele] = 1.0 + (self.coupon_periode * obs_de_rappel[est_rappele])
+        temps_rappel = obs_de_rappel[est_rappele] * annees_par_obs
+        payoffs[est_rappele] *= np.exp(-taux_actualisation * temps_rappel)
         
         # 2. Non rappelés, au-dessus du PDI
         valeurs_finales = trajectoires_dec[:, -1]
         au_dessus_pdi = (~est_rappele) & (valeurs_finales >= self.niveau_pdi)
-        payoffs[au_dessus_pdi] = 1.0
+        payoffs[au_dessus_pdi] = 1.0 * np.exp(-taux_actualisation * scenario.annees)
         
         # 3. Non rappelés, sous le PDI
         sous_pdi = (~est_rappele) & (valeurs_finales < self.niveau_pdi)
-        payoffs[sous_pdi] = valeurs_finales[sous_pdi] / niveau_initial
+        payoffs[sous_pdi] = (valeurs_finales[sous_pdi] / niveau_initial) * np.exp(-taux_actualisation * scenario.annees)
         
         return payoffs
 
@@ -142,7 +149,7 @@ class SimulationEngine:
         self.nb_trajectoires = nb_trajectoires
         self.seed = seed
         
-    def run(self, index: DecrementIndex, scenario: MarketScenario, product: AutocallProduct):
+    def run(self, index: DecrementIndex, scenario: MarketScenario, product: AutocallProduct, taux_actualisation=0.0):
         np.random.seed(self.seed)
         print(f"Simulation de {self.nb_trajectoires} trajectoires en cours...")
         Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
@@ -151,11 +158,11 @@ class SimulationEngine:
         
         # Sur le Decrement
         est_rappele_dec, obs_de_rappel_dec = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
-        payoffs_dec = product.calculate_payoff(traj_dec, est_rappele_dec, obs_de_rappel_dec, index.niveau_initial)
+        payoffs_dec = product.calculate_payoff(traj_dec, est_rappele_dec, obs_de_rappel_dec, index.niveau_initial, scenario, taux_actualisation)
         
         # Sur le Price Return
         est_rappele_pr, obs_de_rappel_pr = product.evaluate(traj_pr, scenario, self.nb_trajectoires)
-        payoffs_pr = product.calculate_payoff(traj_pr, est_rappele_pr, obs_de_rappel_pr, index.niveau_initial)
+        payoffs_pr = product.calculate_payoff(traj_pr, est_rappele_pr, obs_de_rappel_pr, index.niveau_initial, scenario, taux_actualisation)
         
         return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
@@ -169,7 +176,7 @@ class SimulationEngine:
         
         return (np.sum(annees_rappel) + np.sum(annees_non_rappel)) / len(est_rappele)
 
-    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres, use_decrement=False):
+    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres, use_decrement=False, taux_actualisation=0.0):
         import pandas as pd
         
         np.random.seed(self.seed)
@@ -192,7 +199,7 @@ class SimulationEngine:
                         coupon_periode=coupon_pct
                     )
                     est_rappele, obs_de_rappel = test_product.evaluate(traj_to_use, scenario, self.nb_trajectoires)
-                    payoffs = test_product.calculate_payoff(traj_to_use, est_rappele, obs_de_rappel, index.niveau_initial)
+                    payoffs = test_product.calculate_payoff(traj_to_use, est_rappele, obs_de_rappel, index.niveau_initial, scenario, taux_actualisation)
                     mean_payoff = np.mean(payoffs) * 100
                     row_data[f"{coupon_pct:.2f}%"] = round(mean_payoff, 2)
                 results.append(row_data)
@@ -706,7 +713,7 @@ if __name__ == "__main__":
     mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4, degressivite=1.0)
     
     moteur = SimulationEngine(nb_trajectoires=10000,seed=42)
-    traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall)
+    traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=0.03)
     
     nom_scenario = f"Scénario N-Périodes Test"
     reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
