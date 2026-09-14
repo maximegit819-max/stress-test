@@ -65,7 +65,7 @@ with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Se
         
     decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
 
-with st.sidebar.expander("4. Produit Autocall", expanded=False):
+with st.sidebar.expander("4. Produit Autocall", expanded=(mode in ["Scénario Fixe", "Surface 3D (Decrement)"])):
     if mode != "Surface 3D (Decrement)":
         st.info("Les barrières (Rappel et PDI) s'adaptent au Spot Initial testé.")
         barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
@@ -96,9 +96,6 @@ elif mode == "Matrice d'Équivalence (PR)":
     tolerance = st.sidebar.slider("Tolérance d'équivalence (%)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 else:
     btn_text = "Générer la Surface 3D"
-    st.sidebar.divider()
-    list_coupons = np.arange(0.25, 5.25, 0.25)
-    coupon_3d = st.sidebar.selectbox("Coupon pour vue 3D", [f"{c:.2f}%" for c in list_coupons], index=len(list_coupons)//2)
 
 lancer = st.sidebar.button(btn_text, type="primary", use_container_width=True)
 
@@ -147,16 +144,16 @@ if lancer:
                     else:
                         fig_binned = None
                     
+                    st.subheader("Distributions")
+                    st.plotly_chart(fig_dist_rappel, use_container_width=True)
+                    st.plotly_chart(fig_dist_dec, use_container_width=True)
+                    st.plotly_chart(fig_dist_pr, use_container_width=True)
+                    st.plotly_chart(fig_dist_dec_reelle, use_container_width=True)
+                    st.plotly_chart(fig_dist_pr_reelle, use_container_width=True)
+                    
                     if fig_binned:
                         st.subheader("Analyse par Tranches (Sous PDI)")
                         st.plotly_chart(fig_binned, use_container_width=True)
-                        
-                    st.subheader("Distributions")
-                    st.plotly_chart(fig_dist_rappel, use_container_width=True)
-                    st.plotly_chart(fig_dist_dec_reelle, use_container_width=True)
-                    st.plotly_chart(fig_dist_dec, use_container_width=True)
-                    st.plotly_chart(fig_dist_pr_reelle, use_container_width=True)
-                    st.plotly_chart(fig_dist_pr, use_container_width=True)
                     
         elif mode == "Analyse de Sensibilité (Spots)": # Analyse de Sensibilité
             spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
@@ -241,6 +238,7 @@ if lancer:
             st.header("Matrice d'Équivalence PR")
             
             # Paramètres de la grille
+            list_coupons = np.arange(0.25, 5.25, 0.25)
             list_pdis = np.arange(40.0, 105.0, 5.0)
             list_barrieres = np.arange(100.0, 155.0, 5.0)
             
@@ -285,15 +283,15 @@ if lancer:
                 st.dataframe(df_filtered, use_container_width=True, height=600)
                 
         elif mode == "Surface 3D (Decrement)":
-            st.header("Surface 3D (Decrement)")
+            st.header("Surfaces 3D Comparatives (Decrement vs Price Return)")
             
-            # Paramètres de la grille (nouveaux paramètres demandés)
+            # Paramètres de la grille
             list_coupons = [float(coupon_periode)]
 
             list_pdis = np.arange(35.0, 85.0, 5.0)
             list_barrieres = np.arange(80.0, 125.0, 5.0)
             
-            with st.spinner("Génération de la surface 3D sur l'indice Decrement..."):
+            with st.spinner("Génération des surfaces 3D (Decrement & Price Return)..."):
                 spot = float(niveau_initial)
                 pdi_niveau = spot * niveau_pdi_pct
                 barriere_rappel = spot * barriere_rappel_pct
@@ -310,42 +308,85 @@ if lancer:
                 )
                 moteur = monte_carlo_2.SimulationEngine(nb_trajectoires=10000, seed=42)
                 
-                # Génération de la grille avec use_decrement=True
-                df = moteur.generer_matrice_structurelle(
+                # 1. Grille Decrement
+                df_dec = moteur.generer_matrice_structurelle(
                     mon_indice_dec, scenario_krach, mon_autocall, 
                     list_coupons, list_pdis, list_barrieres, use_decrement=True, taux_actualisation=taux_actualisation
                 )
                 
+                # 2. Grille Price Return
+                df_pr = moteur.generer_matrice_structurelle(
+                    mon_indice_dec, scenario_krach, mon_autocall, 
+                    list_coupons, list_pdis, list_barrieres, use_decrement=False, taux_actualisation=taux_actualisation
+                )
+                
                 # Extraction des données pour Plotly
                 coupon_col = f"{coupon_periode:.2f}%"
-                df_plot = df[[coupon_col]].reset_index()
-                df_plot['PDI'] = df_plot['PDI'].str.replace('%', '').astype(float)
-                df_plot['Barrière'] = df_plot['Barrière'].str.replace('%', '').astype(float)
-                pivot_df = df_plot.pivot(index='PDI', columns='Barrière', values=coupon_col)
                 
-                x_vals = pivot_df.columns.values.astype(float)
-                y_vals = pivot_df.index.values.astype(float)
-                z_vals = pivot_df.values.astype(float)
+                # Pivot Decrement
+                df_plot_dec = df_dec[[coupon_col]].reset_index()
+                df_plot_dec['PDI'] = df_plot_dec['PDI'].str.replace('%', '').astype(float)
+                df_plot_dec['Barrière'] = df_plot_dec['Barrière'].str.replace('%', '').astype(float)
+                pivot_dec = df_plot_dec.pivot(index='PDI', columns='Barrière', values=coupon_col)
+                
+                # Pivot Price Return
+                df_plot_pr = df_pr[[coupon_col]].reset_index()
+                df_plot_pr['PDI'] = df_plot_pr['PDI'].str.replace('%', '').astype(float)
+                df_plot_pr['Barrière'] = df_plot_pr['Barrière'].str.replace('%', '').astype(float)
+                pivot_pr = df_plot_pr.pivot(index='PDI', columns='Barrière', values=coupon_col)
+                
+                x_vals = pivot_dec.columns.values.astype(float)
+                y_vals = pivot_dec.index.values.astype(float)
+                z_dec = pivot_dec.values.astype(float)
+                z_pr = pivot_pr.values.astype(float)
                 
                 x_mesh, y_mesh = np.meshgrid(x_vals, y_vals)
                 
+                # Écart moyen et max
+                ecart_matrice = z_pr - z_dec
+                moy_ecart = np.mean(ecart_matrice)
+                max_ecart = np.max(ecart_matrice)
+                
                 fig3d = go.Figure()
+                
+                # Surface Decrement (Nuances froides / Vert-Bleu Viridis)
                 fig3d.add_trace(go.Surface(
-                    z=z_vals, x=x_mesh, y=y_mesh, 
-                    colorscale='Viridis', name="Payoff Decrement", showscale=False
+                    z=z_dec, x=x_mesh, y=y_mesh, 
+                    colorscale='Viridis', name="Decrement", opacity=0.85, showscale=False, showlegend=True,
+                    hovertemplate="<b>Indice Decrement</b><br>Barrière: %{x}%<br>PDI: %{y}%<br>Payoff: %{z:.2f}%<extra></extra>"
+                ))
+                
+                # Surface Price Return (Nuances chaudes / YlOrRd)
+                fig3d.add_trace(go.Surface(
+                    z=z_pr, x=x_mesh, y=y_mesh, 
+                    colorscale='YlOrRd', name="Price Return", opacity=0.80, showscale=False, showlegend=True,
+                    hovertemplate="<b>Price Return</b><br>Barrière: %{x}%<br>PDI: %{y}%<br>Payoff: %{z:.2f}%<extra></extra>"
                 ))
                 
                 fig3d.update_layout(
-                    title=f"Topographie des payoffs Decrement (Coupon fixé à {coupon_periode:.2f}%)",
+                    title=f"Topographie 3D comparée des payoffs (Coupon fixé à {coupon_periode:.2f}%)",
                     scene=dict(
                         xaxis_title='Barrière Initiale (%)',
                         yaxis_title='Niveau PDI (%)',
                         zaxis_title='Payoff (%)'
                     ),
-                    height=700,
-                    margin=dict(l=0, r=0, b=0, t=40)
+                    legend=dict(
+                        orientation="h",
+                        yanchor="top",
+                        y=1.02,
+                        xanchor="center",
+                        x=0.5
+                    ),
+                    height=720,
+                    margin=dict(l=0, r=0, b=0, t=50)
                 )
+                
                 st.plotly_chart(fig3d, use_container_width=True)
+                
+                col_m1, col_m2 = st.columns(2)
+                col_m1.metric("Surperformance moyenne Price Return vs Decrement", f"+{moy_ecart:.2f}%")
+                col_m2.metric("Écart maximal observé", f"+{max_ecart:.2f}%")
+                st.caption("💡 *Astuce : Vous pouvez cliquer sur les légendes 'Decrement' ou 'Price Return' pour masquer ou afficher chaque surface individuellement.*")
 
 else:
     st.info("Sélectionnez le mode d'analyse dans la barre latérale, ajustez les paramètres, puis cliquez sur le bouton pour lancer.")
