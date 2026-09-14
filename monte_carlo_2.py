@@ -226,10 +226,13 @@ class SimulationEngine:
         valeurs_finales_pr = traj_pr[:, -1]
         
         en_dessous_pdi = (valeurs_finales_dec < product.niveau_pdi) & (~est_rappele_dec)
-        pct_en_dessous = np.mean(en_dessous_pdi) * 100
+        pct_en_dessous_dec = np.mean(en_dessous_pdi) * 100
+        
+        en_dessous_pdi_pr = (valeurs_finales_pr < product.niveau_pdi) & (~est_rappele_pr)
+        pct_en_dessous_pr = np.mean(en_dessous_pdi_pr) * 100
         
         print(f"\n#### À MATURITÉ (Année {scenario.annees}) :")
-        print(f"- **Pourcentage de fois où l'indice Decrement finit en dessous du PDI** : {pct_en_dessous:.2f}%")
+        print(f"- **Pourcentage de fois où l'indice finit en dessous du PDI** : Decrement = {pct_en_dessous_dec:.2f}% | Price Return = {pct_en_dessous_pr:.2f}%")
         
         bin_stats = []
         if np.any(en_dessous_pdi):
