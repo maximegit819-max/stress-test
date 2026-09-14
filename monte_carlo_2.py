@@ -372,10 +372,11 @@ class SimulationEngine:
         self._add_product_levels_plotly(fig1, product, scenario, index.niveau_initial)
         
         fig1.update_layout(
-                           xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
-                           xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
-                           legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
-                           margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
+            title="Trajectoires Temporelles Représentatives (Cas sous PDI)",
+            xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
+            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
+            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
 
         # ==========================================
         # GRAPHIQUE 2 : Le nuage de points
@@ -411,10 +412,11 @@ class SimulationEngine:
         self._add_product_levels_plotly(fig2, product, scenario, index.niveau_initial)
         
         fig2.update_layout(
-                           xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
-                           xaxis=dict(range=[0, scenario.annees]), yaxis=dict(range=[0, max_y_display]),
-                           legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
-                           margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
+            title="Trajectoires Temporelles par Centiles Finaux (Top 10% à 90%)",
+            xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
+            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(range=[0, max_y_display]),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
+            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
                            
         return fig1, fig2
 
