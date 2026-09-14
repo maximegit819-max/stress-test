@@ -570,8 +570,9 @@ class SimulationEngine:
         from plotly.subplots import make_subplots
         import numpy as np
         
+        nb_trajectoires = traj_dec.shape[0]
+        
         # 1. Distribution des niveaux finaux (sans tenir compte des rappels)
-        # On plafonne à 5000 pour regrouper les valeurs extrêmes et on subdivise finement
         valeurs_finales_dec = np.clip(traj_dec[:, -1], a_min=None, a_max=5000)
         valeurs_finales_pr = np.clip(traj_pr[:, -1], a_min=None, a_max=5000)
         
@@ -579,76 +580,80 @@ class SimulationEngine:
         valeurs_non_rappelees_dec = np.clip(traj_dec[~est_rappele_dec, -1], a_min=None, a_max=5000)
         valeurs_non_rappelees_pr = np.clip(traj_pr[~est_rappele_pr, -1], a_min=None, a_max=5000)
         
+        # Poids proportionnels au NOMBRE TOTAL DE TRAJECTOIRES
+        poids_non_rappelees_dec = np.full(len(valeurs_non_rappelees_dec), 100.0 / nb_trajectoires)
+        poids_non_rappelees_pr = np.full(len(valeurs_non_rappelees_pr), 100.0 / nb_trajectoires)
+        
         tickvals_dist = list(range(0, 5001, 500))
         ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
         
-        # Graphique Decrement (Toutes trajectoires)
+        # Graphique Decrement
         fig_dist_dec = go.Figure()
         fig_dist_dec.add_trace(go.Histogram(
             x=valeurs_finales_dec, histnorm='percent', autobinx=False, 
             xbins=dict(start=0, end=5050, size=50), name="Decrement", 
             marker_color='blue', opacity=0.75,
-            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
         ))
         fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
 
         fig_dist_dec.update_layout(
             title="Distribution des Niveaux Finaux (Decrement - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
-            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis_title="Pourcentage des trajectoires totales (%)",
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
-        # Graphique Decrement (Trajectoires Non Rappelées uniquement)
+        # Graphique Decrement (Trajectoires Non Rappelées uniquement, rapportées au total)
         fig_dist_dec_reelle = go.Figure()
         if len(valeurs_non_rappelees_dec) > 0:
             fig_dist_dec_reelle.add_trace(go.Histogram(
-                x=valeurs_non_rappelees_dec, histnorm='percent', autobinx=False, 
+                x=valeurs_non_rappelees_dec, y=poids_non_rappelees_dec, histfunc='sum', autobinx=False, 
                 xbins=dict(start=0, end=5050, size=50), name="Decrement (Non Rappelé)", 
                 marker_color='darkblue', opacity=0.75,
-                hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+                hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
             ))
         fig_dist_dec_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
         fig_dist_dec_reelle.update_layout(
             title="Distribution des Trajectoires Non Rappelées (Decrement)",
             xaxis_title="Niveau Final à Maturité (pts)", 
-            yaxis_title="Pourcentage des trajectoires non rappelées (%)",
+            yaxis_title="Pourcentage des trajectoires totales (%)",
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
-        # Graphique Price Return (Toutes trajectoires)
+        # Graphique Price Return
         fig_dist_pr = go.Figure()
         fig_dist_pr.add_trace(go.Histogram(
             x=valeurs_finales_pr, histnorm='percent', autobinx=False, 
             xbins=dict(start=0, end=5050, size=50), name="Price Return", 
             marker_color='orange', opacity=0.75,
-            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
         ))
         fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
         fig_dist_pr.update_layout(
             title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
-            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis_title="Pourcentage des trajectoires totales (%)",
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
-        # Graphique Price Return (Trajectoires Non Rappelées uniquement)
+        # Graphique Price Return (Trajectoires Non Rappelées uniquement, rapportées au total)
         fig_dist_pr_reelle = go.Figure()
         if len(valeurs_non_rappelees_pr) > 0:
             fig_dist_pr_reelle.add_trace(go.Histogram(
-                x=valeurs_non_rappelees_pr, histnorm='percent', autobinx=False, 
+                x=valeurs_non_rappelees_pr, y=poids_non_rappelees_pr, histfunc='sum', autobinx=False, 
                 xbins=dict(start=0, end=5050, size=50), name="Price Return (Non Rappelé)", 
                 marker_color='darkorange', opacity=0.75,
-                hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+                hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
             ))
         fig_dist_pr_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
         fig_dist_pr_reelle.update_layout(
             title="Distribution des Trajectoires Non Rappelées (Price Return)",
             xaxis_title="Niveau Final à Maturité (pts)", 
-            yaxis_title="Pourcentage des trajectoires non rappelées (%)",
+            yaxis_title="Pourcentage des trajectoires totales (%)",
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
