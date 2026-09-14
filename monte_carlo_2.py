@@ -589,48 +589,72 @@ class SimulationEngine:
         
         # Graphique Decrement
         fig_dist_dec = go.Figure()
-        fig_dist_dec.add_trace(go.Histogram(x=valeurs_finales_dec, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Decrement", marker_color='blue', opacity=0.75))
+        fig_dist_dec.add_trace(go.Histogram(
+            x=valeurs_finales_dec, histnorm='percent', autobinx=False, 
+            xbins=dict(start=0, end=5050, size=50), name="Decrement", 
+            marker_color='blue', opacity=0.75,
+            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+        ))
         fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
 
         fig_dist_dec.update_layout(
             title="Distribution des Niveaux Finaux (Decrement - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
-            yaxis_title="Nombre de trajectoires",
+            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
         # Graphique Decrement Réel
         fig_dist_dec_reelle = go.Figure()
-        fig_dist_dec_reelle.add_trace(go.Histogram(x=valeurs_reelles_dec, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Decrement Réel", marker_color='darkblue', opacity=0.75))
+        fig_dist_dec_reelle.add_trace(go.Histogram(
+            x=valeurs_reelles_dec, histnorm='percent', autobinx=False, 
+            xbins=dict(start=0, end=5050, size=50), name="Decrement Réel", 
+            marker_color='darkblue', opacity=0.75,
+            hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+        ))
         fig_dist_dec_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
         fig_dist_dec_reelle.add_vline(x=product.barriere_rappel, line_dash="solid", line_color="green", annotation_text="Barrière Rappel")
         fig_dist_dec_reelle.update_layout(
             title="Distribution Finale Réelle (Produit Autocall Decrement)",
             xaxis_title="Niveau Final Payé (pts)", 
-            yaxis_title="Nombre de trajectoires",
+            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
         # Graphique Price Return
         fig_dist_pr = go.Figure()
-        fig_dist_pr.add_trace(go.Histogram(x=valeurs_finales_pr, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Price Return", marker_color='orange', opacity=0.75))
+        fig_dist_pr.add_trace(go.Histogram(
+            x=valeurs_finales_pr, histnorm='percent', autobinx=False, 
+            xbins=dict(start=0, end=5050, size=50), name="Price Return", 
+            marker_color='orange', opacity=0.75,
+            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+        ))
         fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
         fig_dist_pr.update_layout(
             title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
             xaxis_title="Niveau Final (pts)", 
-            yaxis_title="Nombre de trajectoires",
+            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
         # Graphique Price Return Réel
         fig_dist_pr_reelle = go.Figure()
-        fig_dist_pr_reelle.add_trace(go.Histogram(x=valeurs_reelles_pr, autobinx=False, xbins=dict(start=0, end=5050, size=50), name="Price Return Réel", marker_color='darkorange', opacity=0.75))
+        fig_dist_pr_reelle.add_trace(go.Histogram(
+            x=valeurs_reelles_pr, histnorm='percent', autobinx=False, 
+            xbins=dict(start=0, end=5050, size=50), name="Price Return Réel", 
+            marker_color='darkorange', opacity=0.75,
+            hovertemplate="Niveau : %{x} pts<br>Proportion : %{y:.2f}%<extra></extra>"
+        ))
         fig_dist_pr_reelle.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
         fig_dist_pr_reelle.add_vline(x=product.barriere_rappel, line_dash="solid", line_color="green", annotation_text="Barrière Rappel")
         fig_dist_pr_reelle.update_layout(
             title="Distribution Finale Réelle (Produit Autocall PR)",
             xaxis_title="Niveau Final Payé (pts)", 
-            yaxis_title="Nombre de trajectoires",
+            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
@@ -656,14 +680,19 @@ class SimulationEngine:
         obs_rappel = np.array([map_obs[d] for d in dates_rappel_valid])
         
         unique_obs, counts = np.unique(obs_rappel, return_counts=True)
+        counts_pct = (counts / nb_trajectoires) * 100.0
         
         fig_dist_rappel = go.Figure()
-        fig_dist_rappel.add_trace(go.Bar(x=unique_obs, y=counts, name="Rappels", marker_color='green', hovertemplate="%{y} trajectoires<extra></extra>"))
+        fig_dist_rappel.add_trace(go.Bar(
+            x=unique_obs, y=counts_pct, name="Rappels", 
+            marker_color='green', hovertemplate="Observation %{x} : %{y:.2f}% des trajectoires<extra></extra>"
+        ))
         
         fig_dist_rappel.update_layout(
             title="Distribution des Périodes de Rappel (Autocall)",
             xaxis_title=f"Numéro d'observation (Fréquence : {product.frequence_obs_mois} mois)", 
-            yaxis_title="Nombre de trajectoires",
+            yaxis_title="Pourcentage des trajectoires (%)",
+            yaxis=dict(ticksuffix="%"),
             xaxis=dict(dtick=1)
         )
         
