@@ -661,42 +661,49 @@ class SimulationEngine:
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
         
-        # 2. Distribution des dates de rappel
-        nb_trajectoires = traj_dec.shape[0]
-        date_rappel = np.full(nb_trajectoires, -1)
+        # 2. Distribution des dates de rappel (Decrement et Price Return)
+        _, obs_de_rappel_dec = product.evaluate(traj_dec, scenario, nb_trajectoires)
+        _, obs_de_rappel_pr = product.evaluate(traj_pr, scenario, nb_trajectoires)
         
-        jours_par_mois = scenario.jours_par_an // 12
-        jours_entre_observations = jours_par_mois * product.frequence_obs_mois
+        valid_obs_dec = obs_de_rappel_dec[est_rappele_dec]
+        unique_obs_dec, counts_dec = np.unique(valid_obs_dec, return_counts=True)
+        dict_dec = dict(zip(unique_obs_dec, counts_dec))
         
-        est_rappele = np.zeros(nb_trajectoires, dtype=bool)
-        dates_possibles = []
+        valid_obs_pr = obs_de_rappel_pr[est_rappele_pr]
+        unique_obs_pr, counts_pr = np.unique(valid_obs_pr, return_counts=True)
+        dict_pr = dict(zip(unique_obs_pr, counts_pr))
         
-        for t in range(1, scenario.total_jours + 1):
-            if (t % jours_entre_observations == 0) and (t >= jours_par_mois * product.non_call_period_mois):
-                dates_possibles.append(t)
-                nouveaux_rappels = (~est_rappele) & (traj_dec[:, t] >= product.barriere_rappel)
-                date_rappel[nouveaux_rappels] = t
-                est_rappele = est_rappele | nouveaux_rappels
-                
-        dates_rappel_valid = date_rappel[date_rappel > 0]
-        map_obs = {date: i+1 for i, date in enumerate(dates_possibles)}
-        obs_rappel = np.array([map_obs[d] for d in dates_rappel_valid])
-        
-        unique_obs, counts = np.unique(obs_rappel, return_counts=True)
-        counts_pct = (counts / nb_trajectoires) * 100.0
+        all_obs = np.array(sorted(list(set(unique_obs_dec) | set(unique_obs_pr))))
+        if len(all_obs) == 0:
+            all_obs = np.array([1])
+            
+        counts_pct_dec = [(dict_dec.get(o, 0) / nb_trajectoires) * 100.0 for o in all_obs]
+        counts_pct_pr = [(dict_pr.get(o, 0) / nb_trajectoires) * 100.0 for o in all_obs]
         
         fig_dist_rappel = go.Figure()
+        
+        # Decrement
         fig_dist_rappel.add_trace(go.Bar(
-            x=unique_obs, y=counts_pct, name="Rappels", 
-            marker_color='green', hovertemplate="Observation %{x} : %{y:.2f}% des trajectoires<extra></extra>"
+            x=all_obs, y=counts_pct_dec, name="Decrement", 
+            marker_color='blue', opacity=0.75,
+            hovertemplate="Observation %{x} (Decrement) : %{y:.2f}% des trajectoires<extra></extra>"
+        ))
+        
+        # Price Return (Vert transparent)
+        fig_dist_rappel.add_trace(go.Bar(
+            x=all_obs, y=counts_pct_pr, name="Price Return", 
+            marker_color='rgba(46, 204, 113, 0.65)',
+            hovertemplate="Observation %{x} (Price Return) : %{y:.2f}% des trajectoires<extra></extra>"
         ))
         
         fig_dist_rappel.update_layout(
-            title="Distribution des Périodes de Rappel (Autocall)",
+            title="Distribution des Périodes de Rappel (Autocall Decrement vs Price Return)",
             xaxis_title=f"Numéro d'observation (Fréquence : {product.frequence_obs_mois} mois)", 
             yaxis_title="Pourcentage des trajectoires (%)",
             yaxis=dict(ticksuffix="%"),
-            xaxis=dict(dtick=1)
+            xaxis=dict(dtick=1),
+            barmode='overlay',
+            hovermode="x unified"
         )
         
         return fig_dist_dec, fig_dist_pr, fig_dist_rappel, fig_dist_dec_reelle, fig_dist_pr_reelle
