@@ -123,7 +123,7 @@ if lancer:
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
                     nom_scenario = f"Scénario Fixe (Spot {niveau_initial:.0f})"
-                    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach)
+                    reps_scen, bin_stats, levier_equivalent = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach)
                 stats_text = f.getvalue()
                 
                 st.success(f"Simulation terminée avec succès !")
@@ -133,6 +133,12 @@ if lancer:
                 with col_stats:
                     st.metric(label="Duration Espérée (Expected Maturity)", value=f"{duration_dec:.2f} ans")
                     st.caption(f"À titre comparatif, la duration du Price Return serait de {duration_pr:.2f} ans.")
+                    if levier_equivalent is not None:
+                        st.metric(
+                            label="Levier Équivalent (Sévérité vs PR)", 
+                            value=f"{levier_equivalent:.2f}x",
+                            help="En cas de franchissement de barrière, ce Decrement détruit le capital avec la même violence qu'un PR qui aurait ce multiplicateur de perte."
+                        )
                     st.subheader("Statistiques")
                     st.markdown(stats_text)
                     

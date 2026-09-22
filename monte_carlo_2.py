@@ -234,12 +234,19 @@ class SimulationEngine:
         print(f"\n#### À MATURITÉ (Année {scenario.annees}) :")
         print(f"- **Pourcentage de fois où l'indice finit en dessous du PDI** : Decrement = {pct_en_dessous_dec:.2f}% | Price Return = {pct_en_dessous_pr:.2f}%")
         
+        levier_equivalent = None
         bin_stats = []
         if np.any(en_dessous_pdi):
             moy_dec_en_dessous = np.mean(valeurs_finales_dec[en_dessous_pdi])
             moy_pr_en_dessous = np.mean(valeurs_finales_pr[en_dessous_pdi])
+            
+            perte_dec = 1.0 - (moy_dec_en_dessous / niveau_initial)
+            perte_pr = 1.0 - (moy_pr_en_dessous / niveau_initial)
+            levier_equivalent = perte_dec / perte_pr if perte_pr > 0 else 0
+            
             print(f"- **Position moyenne de l'indice Decrement** (pour ces cas) : {(moy_dec_en_dessous / niveau_initial) * 100:.2f}% du Spot")
-            print(f"- **Position moyenne de l'indice PR** (pour ces cas) : {(moy_pr_en_dessous / niveau_initial) * 100:.2f}% du Spot\n")
+            print(f"- **Position moyenne de l'indice PR** (pour ces cas) : {(moy_pr_en_dessous / niveau_initial) * 100:.2f}% du Spot")
+            print(f"- **Levier Équivalent (Sévérité du Krach)** : La perte du Decrement correspond à la perte du PR multipliée par un levier de **{levier_equivalent:.2f}x**.\n")
             
             dec_sous_pdi = valeurs_finales_dec[en_dessous_pdi]
             pr_sous_pdi = valeurs_finales_pr[en_dessous_pdi]
@@ -283,7 +290,7 @@ class SimulationEngine:
         else:
             print("- Aucun scénario ne finit en dessous du PDI à maturité.")
             
-        return reps, bin_stats
+        return reps, bin_stats, levier_equivalent
 
     def _add_background_regimes_plotly(self, fig, scenario):
         """Ajoute les bandes de couleurs et les infos des périodes pour Plotly"""
@@ -754,10 +761,10 @@ if __name__ == "__main__":
     mon_autocall = AutocallProduct(barriere_rappel=1000.0, niveau_pdi=pdi_pts, non_call_period_mois=11, frequence_obs_mois=4, degressivite=1.0)
     
     moteur = SimulationEngine(nb_trajectoires=10000,seed=42)
-    traj_pr, traj_dec, est_rappele, obs_de_rappel, payoffs = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=0.03)
+    traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=0.03)
     
     nom_scenario = f"Scénario N-Périodes Test"
-    reps_scen, bin_stats = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele, payoffs, mon_autocall, scenario_krach)
+    reps_scen, bin_stats, levier = moteur.afficher_statistiques(nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach)
     
     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
     fig1.show()
