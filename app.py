@@ -16,7 +16,7 @@ st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
 st.title("Simulateur Monte Carlo")
 
 # --- SIDEBAR ---
-mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité (Spots)", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"])
+mode = st.sidebar.radio("Mode d'analyse", ["Scénario Fixe", "Analyse de Sensibilité", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"])
 st.sidebar.divider()
 
 st.sidebar.header("Paramètres")
@@ -54,16 +54,27 @@ with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
             "yield_initial": yi / 100.0
         })
 
-with st.sidebar.expander("3. Indice Decrement", expanded=(mode != "Analyse de Sensibilité (Spots)")):
-    if mode in ["Scénario Fixe", "Matrice d'Équivalence (PR)", "Surface 3D (Decrement)"]:
-        niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
-    else:
-        st.info("Le Niveau Initial est testé sur une plage.")
-        spot_min = st.number_input("Spot Min", value=400.0, step=50.0)
-        spot_max = st.number_input("Spot Max", value=2000.0, step=50.0)
-        nb_spots = st.number_input("Nombre d'itérations", value=33, step=1)
+with st.sidebar.expander("3. Indice Decrement", expanded=True):
+    if mode == "Analyse de Sensibilité":
+        type_sensi = st.radio("Variable à analyser :", ["Spot (Points)", "Dividende du PR (Yield %)"])
         
-    decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
+        if type_sensi == "Spot (Points)":
+            st.info("Le Spot Initial est testé sur une plage.")
+            spot_min = st.number_input("Spot Min", value=400.0, step=50.0)
+            spot_max = st.number_input("Spot Max", value=2000.0, step=50.0)
+            nb_spots = st.number_input("Nombre d'itérations", value=33, step=1)
+            decrement_annuel = st.number_input("Décrément Fixe (pts)", value=50.0, step=5.0)
+            niveau_initial = 1000.0 # Valeur par défaut
+        else:
+            st.info("Le rendement naturel du PR (Yield) est testé sur une plage.")
+            yield_min = st.number_input("Yield Min (%)", value=0.0, step=0.5)
+            yield_max = st.number_input("Yield Max (%)", value=6.0, step=0.5)
+            nb_yields = st.number_input("Nombre d'itérations", value=13, step=1)
+            niveau_initial = st.number_input("Niveau Initial Fixe", value=1000.0, step=100.0)
+            decrement_annuel = st.number_input("Décrément Fixe (pts)", value=50.0, step=5.0)
+    else:
+        niveau_initial = st.number_input("Niveau Initial", value=1000.0, step=100.0)
+        decrement_annuel = st.number_input("Décrément (pts)", value=50.0, step=5.0)
 
 with st.sidebar.expander("4. Produit Autocall", expanded=(mode in ["Scénario Fixe", "Surface 3D (Decrement)"])):
     if mode != "Surface 3D (Decrement)":
@@ -88,7 +99,7 @@ with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
 
 if mode == "Scénario Fixe":
     btn_text = "Lancer le Scénario Fixe"
-elif mode == "Analyse de Sensibilité (Spots)":
+elif mode == "Analyse de Sensibilité":
     btn_text = "Lancer l'Analyse de Sensibilité"
 elif mode == "Matrice d'Équivalence (PR)":
     btn_text = "Générer la Matrice"
@@ -167,8 +178,11 @@ if lancer:
                         st.markdown("### 3. Analyse par Tranches (Sous PDI)")
                         st.plotly_chart(fig_binned, use_container_width=True)
                     
-        elif mode == "Analyse de Sensibilité (Spots)": # Analyse de Sensibilité
-            spots_test = np.linspace(spot_min, spot_max, int(nb_spots))
+        elif mode == "Analyse de Sensibilité": # Analyse de Sensibilité
+            if type_sensi == "Spot (Points)":
+                valeurs_test = np.linspace(spot_min, spot_max, int(nb_spots))
+            else:
+                valeurs_test = np.linspace(yield_min, yield_max, int(nb_yields))
             
             probs_pdi_dec = []
             probs_pdi_pr = []
@@ -183,10 +197,24 @@ if lancer:
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            for i, spot in enumerate(spots_test):
-                status_text.text(f"Simulation pour Spot = {spot:.0f} pts ({i+1}/{len(spots_test)})...")
+            for i, val in enumerate(valeurs_test):
+                if type_sensi == "Spot (Points)":
+                    spot = val
+                    dec_val = decrement_annuel
+                    status_text.text(f"Simulation pour Spot = {spot:.0f} pts ({i+1}/{len(valeurs_test)})...")
+                    current_scenario = scenario_krach
+                else:
+                    spot = niveau_initial
+                    dec_val = decrement_annuel
+                    status_text.text(f"Simulation pour Yield PR = {val:.2f}% ({i+1}/{len(valeurs_test)})...")
+                    regimes_test = []
+                    for r in mes_regimes_input:
+                        r_copy = r.copy()
+                        r_copy["yield_initial"] = val / 100.0
+                        regimes_test.append(r_copy)
+                    current_scenario = MarketScenario(config_regimes=regimes_test, annees=int(annees))
                 
-                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=decrement_annuel)
+                mon_indice_dec = DecrementIndex(niveau_initial=spot, decrement_annuel=dec_val)
                 pdi_niveau_dyn = spot * niveau_pdi_pct
                 barriere_rappel = spot * barriere_rappel_pct
                 
@@ -196,7 +224,7 @@ if lancer:
                 moteur.seed = int(seed)
                 np.random.seed(moteur.seed)
                 
-                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=taux_actualisation)
+                traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(mon_indice_dec, current_scenario, mon_autocall, taux_actualisation=taux_actualisation)
                 
                 valeurs_finales_dec = traj_dec[:, -1]
                 valeurs_finales_pr = traj_pr[:, -1]
@@ -219,21 +247,22 @@ if lancer:
                 moyennes_dec_crash.append(moy_dec_crash_pct)
                 moyennes_payoffs_dec.append(np.mean(payoffs_dec) * 100)
                 moyennes_payoffs_pr.append(np.mean(payoffs_pr) * 100)
-                durations_dec.append(moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach))
-                durations_pr.append(moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, scenario_krach))
+                durations_dec.append(moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, current_scenario))
+                durations_pr.append(moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, current_scenario))
                 
                 del traj_pr, traj_dec, est_rappele_dec, est_rappele_pr, mon_indice_dec, mon_autocall
                 gc.collect()
                 
-                progress_bar.progress((i + 1) / len(spots_test))
+                progress_bar.progress((i + 1) / len(valeurs_test))
                 
             status_text.text("Génération du graphique interactif...")
             
             yield_fixe = mes_regimes_input[0]["yield_initial"]
             
             fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration = moteur.plot_sensibilite(
-                spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
-                decrement_annuel, yield_fixe, mes_regimes_input, durations_dec, durations_pr
+                valeurs_test, type_sensi, niveau_initial, decrement_annuel,
+                probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr,
+                yield_fixe, mes_regimes_input, durations_dec, durations_pr
             )
             
             st.success("Analyse de Sensibilité terminée !")

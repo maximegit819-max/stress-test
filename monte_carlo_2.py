@@ -427,27 +427,41 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, spots_test, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, decrement_annuel, yield_fixe, mes_regimes, durations_dec=None, durations_pr=None):
+    def plot_sensibilite(self, valeurs_test, type_sensi, niveau_initial_fixe, decrement_fixe, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, yield_fixe, mes_regimes, durations_dec=None, durations_pr=None):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
         
-        spots_array = np.array(spots_test)
+        valeurs_array = np.array(valeurs_test)
         
         # --- Calculs Mathématiques ---
         # 1. Écart de sur-perte
         ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
 
-        x_tick_vals = np.arange(min(spots_test), max(spots_test)+200, 200)
+        if type_sensi == "Spot (Points)":
+            step = 200 if max(valeurs_test) - min(valeurs_test) > 500 else max(10, (max(valeurs_test) - min(valeurs_test))//5)
+            x_tick_vals = np.arange(min(valeurs_test), max(valeurs_test)+step, step)
+            x_title = "Écart de Dividende Initial (Niveau du Spot Initial)"
+        else:
+            step = 1.0 if max(valeurs_test) - min(valeurs_test) > 5 else max(0.5, (max(valeurs_test) - min(valeurs_test))/5)
+            x_tick_vals = np.arange(min(valeurs_test), max(valeurs_test)+step, step)
+            x_title = "Écart de Dividende (Yield Naturel du PR en %)"
+
         x_tick_text = []
-        for t in x_tick_vals:
-            breakeven_y = (decrement_annuel / t) * 100
-            ecart = (yield_fixe * 100) - breakeven_y
-            x_tick_text.append(f"{ecart:+.1f}%<br>({t:.0f} pts)")
+        for v in x_tick_vals:
+            if type_sensi == "Spot (Points)":
+                breakeven_y = (decrement_fixe / v) * 100
+                ecart = (yield_fixe * 100) - breakeven_y
+                x_tick_text.append(f"{ecart:+.2f}%<br>(Spot: {v:.0f} pts)")
+            else:
+                breakeven_y = (decrement_fixe / niveau_initial_fixe) * 100
+                ecart = v - breakeven_y
+                x_tick_text.append(f"{ecart:+.2f}%<br>(Yield: {v:.2f}%)")
 
         annotation_text = "<b>Hypothèses de Marché</b><br>"
         for i, regime in enumerate(mes_regimes):
-            annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, Yield {regime['yield_initial']*100:.1f}%<br>"
+            yield_str = f"Yield {regime['yield_initial']*100:.1f}%" if type_sensi == "Spot (Points)" else "Yield Variable"
+            annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift {regime['r_perf']*100:+.0f}%, Vol {regime['vol']*100:.0f}%, {yield_str}<br>"
 
         # ==========================================
         # GRAPHIQUE 1 : Probabilités
@@ -455,12 +469,12 @@ class SimulationEngine:
         fig_prob = go.Figure()
 
         fig_prob.add_trace(
-            go.Scatter(x=spots_test, y=probs_pdi_dec, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=probs_pdi_dec, mode='lines+markers',
                        name='Probabilité PDI (Dec)',
                        line=dict(color='orange', width=2), marker=dict(size=6))
         )
         fig_prob.add_trace(
-            go.Scatter(x=spots_test, y=probs_rappel, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=probs_rappel, mode='lines+markers',
                        name='Probabilité Autocall',
                        line=dict(color='green', width=2), marker=dict(symbol='diamond', size=6))
         )
@@ -469,7 +483,7 @@ class SimulationEngine:
 
         fig_prob.update_layout(
             title=dict(text=f"<b>1. Probabilités</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Probabilités (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
@@ -481,12 +495,12 @@ class SimulationEngine:
         fig_niveaux = go.Figure()
 
         fig_niveaux.add_trace(
-            go.Scatter(x=spots_test, y=moyennes_dec_crash, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=moyennes_dec_crash, mode='lines+markers',
                        name='Niveau moyen Decrement (% du Spot)',
                        line=dict(color='orange', width=2, dash='dash'), marker=dict(symbol='circle', size=6))
         )
         fig_niveaux.add_trace(
-            go.Scatter(x=spots_test, y=moyennes_pr_crash, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=moyennes_pr_crash, mode='lines+markers',
                        name='Niveau moyen Price Return (% du Spot)',
                        line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='square', size=6))
         )
@@ -495,7 +509,7 @@ class SimulationEngine:
 
         fig_niveaux.update_layout(
             title=dict(text=f"<b>4. Niveaux Finaux Moyens en cas de Krach</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Niveau Final (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
@@ -507,7 +521,7 @@ class SimulationEngine:
         fig_ecart = go.Figure()
 
         fig_ecart.add_trace(
-            go.Scatter(x=spots_test, y=ecarts, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=ecarts, mode='lines+markers',
                        name='Sur-perte (Écart PR - Dec)',
                        line=dict(color='red', width=2), marker=dict(symbol='x', size=6))
         )
@@ -516,7 +530,7 @@ class SimulationEngine:
 
         fig_ecart.update_layout(
             title=dict(text=f"<b>5. Sur-perte du Decrement</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Sur-perte (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
@@ -527,12 +541,12 @@ class SimulationEngine:
         # ==========================================
         fig_payoff = go.Figure()
         fig_payoff.add_trace(
-            go.Scatter(x=spots_test, y=moyennes_payoffs_dec, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=moyennes_payoffs_dec, mode='lines+markers',
                        name='Payoff Moyen (Decrement)',
                        line=dict(color='purple', width=2), marker=dict(symbol='star', size=8))
         )
         fig_payoff.add_trace(
-            go.Scatter(x=spots_test, y=moyennes_payoffs_pr, mode='lines+markers',
+            go.Scatter(x=valeurs_test, y=moyennes_payoffs_pr, mode='lines+markers',
                        name='Payoff Moyen (Price Return)',
                        line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='star', size=8))
         )
@@ -540,7 +554,7 @@ class SimulationEngine:
         fig_payoff.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
         fig_payoff.update_layout(
             title=dict(text=f"<b>3. Espérance de Gain (Payoff Moyen)</b>", font=dict(size=18)),
-            xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
             yaxis=dict(title="Payoff Moyen (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
             legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
             plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
@@ -552,13 +566,13 @@ class SimulationEngine:
         fig_duration = go.Figure()
         if durations_dec is not None:
             fig_duration.add_trace(
-                go.Scatter(x=spots_test, y=durations_dec, mode='lines+markers',
+                go.Scatter(x=valeurs_test, y=durations_dec, mode='lines+markers',
                            name='Duration Espérée (Decrement)',
                            line=dict(color='purple', width=2), marker=dict(symbol='diamond', size=8))
             )
         if durations_pr is not None:
             fig_duration.add_trace(
-                go.Scatter(x=spots_test, y=durations_pr, mode='lines+markers',
+                go.Scatter(x=valeurs_test, y=durations_pr, mode='lines+markers',
                            name='Duration Espérée (Price Return)',
                            line=dict(color='orange', width=2, dash='dot'), marker=dict(symbol='diamond', size=8))
             )
@@ -569,7 +583,7 @@ class SimulationEngine:
             fig_duration.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
             fig_duration.update_layout(
                 title=dict(text=f"<b>2. Évolution de l'Expected Maturity (Duration)</b>", font=dict(size=18)),
-                xaxis=dict(title="Écart de Dividende Initial (Niveau du Spot Initial)", tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
+                xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
                 yaxis=dict(title="Duration (Années)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
                 legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
                 plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
