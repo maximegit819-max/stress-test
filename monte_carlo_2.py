@@ -1,6 +1,8 @@
 import numpy as np
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+import pandas as pd
 
 class MarketScenario:
     """Gère l'environnement de marché de manière dynamique (N périodes)"""
@@ -761,6 +763,179 @@ class SimulationEngine:
         )
         
         return fig
+
+    def plot_distribution_ecarts(self, traj_pr, traj_dec, scenario, index=None, niveau_initial=None, annees_selection=None):
+        """
+        Génère la figure à 3 panneaux des distributions d'écarts [ Price Return - Decrement ] :
+        1. Violons & Boxplots annuels (Médiane en rouge, Moyenne en croix noire)
+        2. Fan Chart temporel continu avec cônes de quantiles et repères de régimes
+        3. Courbes de densité (KDE) pour les années clés
+        Retourne : (fig, df_stats)
+        """
+        if niveau_initial is None:
+            if index is not None and hasattr(index, 'niveau_initial'):
+                niveau_initial = index.niveau_initial
+            else:
+                niveau_initial = traj_pr[0, 0]
+
+        annees = scenario.annees
+        jours_par_an = scenario.jours_par_an
+        config_regimes = scenario.config_regimes
+
+        annees_list = list(range(1, annees + 1))
+        ecarts_par_an_pct_spot = []
+        stats_annuelles = []
+
+        for an in annees_list:
+            idx_jour = an * jours_par_an
+            pr_an = traj_pr[:, idx_jour]
+            dec_an = traj_dec[:, idx_jour]
+
+            diff_pts = pr_an - dec_an
+            diff_pct_spot = (diff_pts / niveau_initial) * 100.0
+
+            ecarts_par_an_pct_spot.append(diff_pct_spot)
+
+            p10, p25, p50, p75, p90 = np.percentile(diff_pct_spot, [10, 25, 50, 75, 90])
+            pct_pr_superieur = np.mean(diff_pts > 0) * 100.0
+
+            masque_krach = pr_an < (0.50 * niveau_initial)
+            ecart_moyen_krach = np.mean(diff_pct_spot[masque_krach]) if np.any(masque_krach) else np.nan
+
+            stats_annuelles.append({
+                "Année": an,
+                "Moyenne (% Spot)": np.mean(diff_pct_spot),
+                "Médiane (% Spot)": p50,
+                "Écart-Type (%)": np.std(diff_pct_spot),
+                "P10 (% Spot)": p10,
+                "P25 (% Spot)": p25,
+                "P75 (% Spot)": p75,
+                "P90 (% Spot)": p90,
+                "P(PR > Dec) %": pct_pr_superieur,
+                "Moy. en Krach (<50% Spot)": ecart_moyen_krach
+            })
+
+        df_stats = pd.DataFrame(stats_annuelles)
+
+        # Style et construction de la figure Matplotlib
+        plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
+
+        fig = plt.figure(figsize=(16, 12), constrained_layout=True)
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.1, 1.0])
+
+        # 1. Haut : Violons & Boîtes à moustaches
+        ax_box = fig.add_subplot(gs[0, :])
+        violin_parts = ax_box.violinplot(
+            ecarts_par_an_pct_spot,
+            positions=annees_list,
+            widths=0.75,
+            showmeans=False,
+            showextrema=False,
+            showmedians=False
+        )
+        for pc in violin_parts['bodies']:
+            pc.set_facecolor('#2b5c8f')
+            pc.set_edgecolor('#1b3a5b')
+            pc.set_alpha(0.35)
+
+        bp = ax_box.boxplot(
+            ecarts_par_an_pct_spot,
+            positions=annees_list,
+            widths=0.25,
+            patch_artist=True,
+            showfliers=False,
+            medianprops=dict(color='#d9381e', linewidth=2.5),
+            boxprops=dict(facecolor='#4a90e2', color='#1b3a5b', alpha=0.85, linewidth=1.5),
+            whiskerprops=dict(color='#1b3a5b', linewidth=1.5),
+            capprops=dict(color='#1b3a5b', linewidth=1.5)
+        )
+
+        moyennes = [s["Moyenne (% Spot)"] for s in stats_annuelles]
+        ax_box.plot(annees_list, moyennes, marker='x', markersize=9, markeredgewidth=2.2, color='black', linestyle='none', label='Moyenne', zorder=6)
+
+        ax_box.axhline(0, color='#7f8c8d', linestyle='--', linewidth=1.2, label='Neutralité (PR = Dec)')
+
+        y_min_disp = max(-25.0, np.percentile(ecarts_par_an_pct_spot[-1], 0.5) - 5)
+        y_max_disp = min(75.0, np.percentile(ecarts_par_an_pct_spot[-1], 99.5) + 10)
+        ax_box.set_ylim(y_min_disp, y_max_disp)
+
+        ax_box.set_title("Distribution Année par Année de l'Écart [ Price Return - Decrement ] (% du Spot Initial)", fontsize=14, fontweight='bold', pad=12)
+        ax_box.set_xlabel("Année d'observation", fontsize=12, labelpad=8)
+        ax_box.set_ylabel("Écart (PR - Dec) en % du Spot Initial", fontsize=12, labelpad=8)
+        ax_box.set_xticks(annees_list)
+        ax_box.set_xticklabels([f"Année {a}" for a in annees_list], fontsize=10)
+
+        legend_elements = [
+            Patch(facecolor='#4a90e2', edgecolor='#1b3a5b', label='Interquartile (25%-75%)'),
+            plt.Line2D([0], [0], color='#d9381e', lw=2.5, label='Médiane (P50)'),
+            plt.Line2D([0], [0], marker='x', color='black', markersize=8, markeredgewidth=2.2, linestyle='none', label='Moyenne (croix noire)'),
+            Patch(facecolor='#2b5c8f', alpha=0.35, label='Densité (Violin)'),
+            plt.Line2D([0], [0], color='#7f8c8d', linestyle='--', label='Écart nul (0%)')
+        ]
+        ax_box.legend(handles=legend_elements, loc='upper left', frameon=True, facecolor='white', framealpha=0.9)
+        ax_box.grid(True, linestyle=':', alpha=0.6)
+
+        # 2. Bas Gauche : Fan Chart Continu
+        ax_fan = fig.add_subplot(gs[1, 0])
+        jours_axe = np.arange(scenario.total_jours + 1)
+        annees_axe = jours_axe / jours_par_an
+
+        diff_toutes_jours = (traj_pr - traj_dec) / niveau_initial * 100.0
+
+        p5_t = np.percentile(diff_toutes_jours, 5, axis=0)
+        p10_t = np.percentile(diff_toutes_jours, 10, axis=0)
+        p25_t = np.percentile(diff_toutes_jours, 25, axis=0)
+        p50_t = np.percentile(diff_toutes_jours, 50, axis=0)
+        p75_t = np.percentile(diff_toutes_jours, 75, axis=0)
+        p90_t = np.percentile(diff_toutes_jours, 90, axis=0)
+        p95_t = np.percentile(diff_toutes_jours, 95, axis=0)
+        moy_t = np.mean(diff_toutes_jours, axis=0)
+
+        ax_fan.fill_between(annees_axe, p5_t, p95_t, color='#3498db', alpha=0.15, label='Intervalles 5% - 95%')
+        ax_fan.fill_between(annees_axe, p10_t, p90_t, color='#2980b9', alpha=0.25, label='Intervalles 10% - 90%')
+        ax_fan.fill_between(annees_axe, p25_t, p75_t, color='#1f618d', alpha=0.35, label='Intervalles 25% - 75%')
+        ax_fan.plot(annees_axe, p50_t, color='#c0392b', linewidth=2.5, label='Médiane temporelle')
+        ax_fan.plot(annees_axe, moy_t, color='black', linewidth=1.8, linestyle='--', label='Moyenne temporelle')
+        ax_fan.axhline(0, color='#7f8c8d', linestyle='--', linewidth=1.2)
+
+        cum_ans = 0
+        for i_reg, r in enumerate(config_regimes[:-1]):
+            cum_ans += r["duree_annees"]
+            ax_fan.axvline(cum_ans, color='#95a5a6', linestyle='-.', alpha=0.8)
+            ax_fan.text(cum_ans + 0.08, 2, f"Période {i_reg+2}", rotation=90, fontsize=8, color='#555555')
+
+        ax_fan.set_title("Évolution Temporelle Continue de l'Écart (Fan Chart)", fontsize=13, fontweight='bold', pad=10)
+        ax_fan.set_xlabel("Années", fontsize=11)
+        ax_fan.set_ylabel("Écart (PR - Dec) en % du Spot", fontsize=11)
+        ax_fan.set_xlim(0, annees)
+        ax_fan.legend(loc='upper left', fontsize=9, frameon=True, facecolor='white', framealpha=0.9)
+        ax_fan.grid(True, linestyle=':', alpha=0.6)
+
+        # 3. Bas Droite : Densités KDE
+        ax_kde = fig.add_subplot(gs[1, 1])
+        if annees_selection is None:
+            annees_selection = [1, 2, 3, 5, 7, 10]
+        couleurs_kde = ['#27ae60', '#16a085', '#2980b9', '#8e44ad', '#e67e22', '#c0392b', '#d35400', '#2c3e50']
+
+        for i_sel, a_sel in enumerate(annees_selection):
+            if a_sel <= annees:
+                col = couleurs_kde[i_sel % len(couleurs_kde)]
+                data_an = ecarts_par_an_pct_spot[a_sel - 1]
+
+                counts, bins = np.histogram(data_an, bins=80, range=(y_min_disp, y_max_disp), density=True)
+                bin_centers = 0.5 * (bins[:-1] + bins[1:])
+                ax_kde.plot(bin_centers, counts, label=f"Année {a_sel} (Méd: {np.median(data_an):+.1f}%)", color=col, linewidth=2.2)
+                ax_kde.fill_between(bin_centers, 0, counts, color=col, alpha=0.1)
+
+        ax_kde.axvline(0, color='#7f8c8d', linestyle='--', linewidth=1.2, label='Neutralité (0%)')
+        ax_kde.set_xlim(y_min_disp, y_max_disp)
+        ax_kde.set_title("Courbes de Densité de l'Écart pour les Années Clés", fontsize=13, fontweight='bold', pad=10)
+        ax_kde.set_xlabel("Écart (PR - Dec) en % du Spot", fontsize=11)
+        ax_kde.set_ylabel("Densité de Probabilité", fontsize=11)
+        ax_kde.legend(loc='upper right', fontsize=9, frameon=True, facecolor='white', framealpha=0.9)
+        ax_kde.grid(True, linestyle=':', alpha=0.6)
+
+        return fig, df_stats
 
 if __name__ == "__main__":
     mes_regimes = [

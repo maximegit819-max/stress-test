@@ -8,12 +8,9 @@ import monte_carlo_2
 import importlib
 import gc
 import matplotlib.pyplot as plt
-import analyse_ecarts
 
 importlib.reload(monte_carlo_2)
-importlib.reload(analyse_ecarts)
 from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
-from analyse_ecarts import generer_graphique_ecarts
 
 st.set_page_config(page_title="Monte Carlo - Autocall", layout="wide")
 
@@ -184,13 +181,8 @@ if lancer:
                     
                     st.markdown("### 4. Distributions des Écarts (Price Return vs Decrement)")
                     with st.spinner("Génération des distributions d'écarts..."):
-                        fig_ecarts, df_ecarts = generer_graphique_ecarts(
-                            traj_pr=traj_pr,
-                            traj_dec=traj_dec,
-                            config_regimes=mes_regimes_input,
-                            annees=int(annees),
-                            niveau_initial=float(niveau_initial),
-                            decrement_annuel=float(decrement_annuel)
+                        fig_ecarts, df_ecarts = moteur.plot_distribution_ecarts(
+                            traj_pr, traj_dec, scenario_krach, mon_indice_dec
                         )
                         st.pyplot(fig_ecarts, use_container_width=True)
                         plt.close(fig_ecarts)
