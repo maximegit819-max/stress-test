@@ -762,7 +762,7 @@ class SimulationEngine:
         
         return fig
 
-    def plot_dispersion_ecarts_violons(self, traj_pr, traj_dec, scenario, niveau_initial=None):
+    def plot_dispersion_ecarts_violons(self, traj_pr, traj_dec, scenario, niveau_initial=None, return_stats=False):
         import plotly.graph_objects as go
         import numpy as np
         
@@ -771,71 +771,152 @@ class SimulationEngine:
             
         fig = go.Figure()
         
-        x_labels = [f"Année {k}" for k in range(1, scenario.annees + 1)]
+        nb_annees = scenario.annees
+        x_labels = [f"Année {k}" for k in range(1, nb_annees + 1)]
         means = []
         medians = []
+        stats_data = []
         
-        for idx, k in enumerate(range(1, scenario.annees + 1)):
+        for idx, k in enumerate(range(1, nb_annees + 1)):
             t_idx = k * scenario.jours_par_an
             # Écart en % du spot initial pour les mêmes tirages aléatoires (trajectoires pures)
             ecart_k = ((traj_pr[:, t_idx] - traj_dec[:, t_idx]) / niveau_initial) * 100.0
             
             med = float(np.median(ecart_k))
             mn = float(np.mean(ecart_k))
+            q25 = float(np.percentile(ecart_k, 25))
+            q75 = float(np.percentile(ecart_k, 75))
+            iqr = q75 - q25
+            
             medians.append(med)
             means.append(mn)
             
-            # Violon de l'année k
+            stats_data.append({
+                "Année": f"Année {k}",
+                "Médiane": med,
+                "Moyenne": mn,
+                "Q25": q25,
+                "Q75": q75,
+                "IQR": iqr,
+                "Min": float(np.min(ecart_k)),
+                "Max": float(np.max(ecart_k))
+            })
+            
+            # Violon avec boîte à moustache intégrée (Raincloud / Box-in-Violin)
             fig.add_trace(go.Violin(
                 y=ecart_k,
                 x=[f"Année {k}"] * len(ecart_k),
                 name=f"Année {k}",
-                box_visible=False,
+                box_visible=True,
+                box_width=0.38,
+                box_fillcolor='rgba(255, 255, 255, 0.95)', # Boîte blanche très lisible et nette
+                box_line_color='#0f172a', # Bordure sombre pour un contraste maximal
+                box_line_width=1.8,
                 meanline_visible=False,
                 points=False,
-                line_color='#2b5c8f',
-                fillcolor='rgba(43, 92, 143, 0.35)',
+                scalemode='width', # Largeur égale et harmonieuse sur chaque année
+                spanmode='hard', # Arrêt net aux valeurs réelles extrêmes
+                line_color='#2563eb', # Contour bleu électrique
+                line_width=1.5,
+                fillcolor='rgba(37, 99, 235, 0.12)', # Voile bleu glacier translucide
                 showlegend=False,
-                hovertemplate=f"<b>Année {k}</b><br>Écart : %{{y:.2f}}% du Spot<extra></extra>"
+                hoverinfo='y+name'
             ))
             
-            # Médiane : ligne rouge horizontale dans chaque violon
+            # Barre rouge horizontale pour la médiane au coeur de chaque boîte
             fig.add_shape(
                 type='line',
                 xref='x', yref='y',
-                x0=idx - 0.28, x1=idx + 0.28,
+                x0=idx - 0.19, x1=idx + 0.19,
                 y0=med, y1=med,
-                line=dict(color='red', width=3.5)
+                line=dict(color='#dc2626', width=3.5),
+                layer='above'
             )
 
-        # Ligne rouge reliant les médianes
+        # Ligne rouge en pointillés reliant les médianes
         fig.add_trace(go.Scatter(
             x=x_labels, y=medians, mode='lines',
-            line=dict(color='red', width=2, dash='dash'),
+            line=dict(color='#dc2626', width=2.5, dash='dash'),
             name='Médiane (Ligne rouge)',
-            hovertemplate="<b>%{x}</b><br>Médiane : +%{y:.2f}% du Spot<extra></extra>"
+            hovertemplate="<b>%{x}</b><br>Médiane : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
         ))
         
-        # Moyenne : Croix
+        # Moyenne : Croix noire
         fig.add_trace(go.Scatter(
             x=x_labels, y=means, mode='markers',
-            marker=dict(symbol='x', size=11, color='black', line=dict(width=2.5)),
+            marker=dict(symbol='x', size=12, color='#0f172a', line=dict(width=2.5, color='#0f172a')),
             name='Moyenne (Croix)',
-            hovertemplate="<b>%{x}</b><br>Moyenne : +%{y:.2f}% du Spot<extra></extra>"
+            hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
         ))
         
-        fig.update_layout(
-            title="<b>Dispersion des Écarts (Price Return - Decrement) par Année</b><br><sup>Trajectoires pures (sans effet Autocall) - Même tirage aléatoire</sup>",
-            xaxis_title="Année",
-            yaxis_title="Écart : (PR - Dec) / Spot Initial (%)",
-            yaxis=dict(ticksuffix="%"),
-            plot_bgcolor='white',
-            hovermode="closest",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        fig.update_xaxes(showgrid=True, gridcolor='lightgray')
-        fig.update_yaxes(showgrid=True, gridcolor='lightgray')
+        # Boutons interactifs pour basculer facilement entre la vue complète et la boîte seule
+        violin_trace_indices = list(range(nb_annees))
+        updatemenus = [
+            dict(
+                type="buttons",
+                direction="right",
+                active=0,
+                x=0.0,
+                y=1.12,
+                xanchor="left",
+                yanchor="bottom",
+                buttons=[
+                    dict(
+                        label="Violons + Boîtes intégrées",
+                        method="restyle",
+                        args=[{"fillcolor": "rgba(37, 99, 235, 0.12)", "line.color": "#2563eb"}, violin_trace_indices]
+                    ),
+                    dict(
+                        label="Boîtes à Moustaches Seules",
+                        method="restyle",
+                        args=[{"fillcolor": "rgba(0, 0, 0, 0)", "line.color": "rgba(0, 0, 0, 0)"}, violin_trace_indices]
+                    ),
+                ],
+                bgcolor="rgba(241, 245, 249, 0.9)",
+                bordercolor="#cbd5e1",
+                font=dict(size=12, color="#0f172a")
+            )
+        ]
         
+        fig.update_layout(
+            title=dict(
+                text="<b>Dispersion des Écarts (Price Return - Decrement) par Année</b><br><span style='font-size:13px; color:#64748b; font-weight:normal;'>Trajectoires pures (sans effet de barrière ni rappel anticipé) — Tirages aléatoires strictement appariés</span>",
+                font=dict(size=18, color='#0f172a')
+            ),
+            xaxis=dict(
+                title=dict(text="<b>Horizon Temporel (Année)</b>", font=dict(size=14, color='#0f172a')),
+                showgrid=False,
+                tickfont=dict(size=13, color='#0f172a')
+            ),
+            yaxis=dict(
+                title=dict(text="<b>Écart : (PR - Dec) / Spot Initial (%)</b>", font=dict(size=14, color='#0f172a')),
+                ticksuffix="%",
+                zeroline=False, # Pas de ligne à 0% demandée
+                gridcolor='#f1f5f9',
+                gridwidth=1,
+                tickfont=dict(size=12, color='#334155')
+            ),
+            height=750,
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#ffffff',
+            hovermode="closest",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                bgcolor="rgba(255, 255, 255, 0.9)",
+                bordercolor="#cbd5e1",
+                borderwidth=1,
+                font=dict(size=12, color='#0f172a')
+            ),
+            updatemenus=updatemenus,
+            margin=dict(l=60, r=40, t=95, b=60)
+        )
+        
+        if return_stats:
+            return fig, stats_data
         return fig
 
 if __name__ == "__main__":

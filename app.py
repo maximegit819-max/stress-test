@@ -156,7 +156,7 @@ if lancer:
                     st.subheader("Visualisations")
                     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
                     fig_dist_dec, fig_dist_pr, fig_dist_rappel, fig_dist_dec_reelle, fig_dist_pr_reelle = moteur.plot_distributions(traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, mon_autocall, scenario_krach)
-                    fig_violins_ecart = moteur.plot_dispersion_ecarts_violons(traj_pr, traj_dec, scenario_krach, niveau_initial=niveau_initial)
+                    fig_violins_ecart, stats_disp = moteur.plot_dispersion_ecarts_violons(traj_pr, traj_dec, scenario_krach, niveau_initial=niveau_initial, return_stats=True)
                     if len(bin_stats) > 0:
                         fig_binned = moteur.plot_binned_averages(bin_stats)
                     else:
@@ -173,13 +173,30 @@ if lancer:
                     st.plotly_chart(fig_dist_pr, use_container_width=True)
                     st.plotly_chart(fig_dist_dec_reelle, use_container_width=True)
                     st.plotly_chart(fig_dist_pr_reelle, use_container_width=True)
-                    
-                    st.markdown("### 3. Dispersion des Écarts (PR - Decrement) par Année")
-                    st.plotly_chart(fig_violins_ecart, use_container_width=True)
-                    
-                    if fig_binned:
-                        st.markdown("### 4. Analyse par Tranches (Sous PDI)")
-                        st.plotly_chart(fig_binned, use_container_width=True)
+
+                st.markdown("---")
+                st.markdown("### 3. Dispersion des Écarts (Price Return - Decrement) par Année")
+                st.plotly_chart(fig_violins_ecart, use_container_width=True)
+                
+                with st.expander("📊 Consulter le tableau quantitatif détaillé des écarts par année (Médiane, Moyenne, Quartiles)", expanded=False):
+                    import pandas as pd
+                    df_disp = pd.DataFrame(stats_disp)
+                    df_disp_display = pd.DataFrame({
+                        "Horizon": df_disp["Année"],
+                        "Médiane (PR - Dec)": df_disp["Médiane"].apply(lambda v: f"{v:+.2f}%"),
+                        "Moyenne (PR - Dec)": df_disp["Moyenne"].apply(lambda v: f"{v:+.2f}%"),
+                        "25e centile (Q1)": df_disp["Q25"].apply(lambda v: f"{v:+.2f}%"),
+                        "75e centile (Q3)": df_disp["Q75"].apply(lambda v: f"{v:+.2f}%"),
+                        "Écart interquartile (IQR)": df_disp["IQR"].apply(lambda v: f"{v:.2f}%"),
+                        "Écart Min": df_disp["Min"].apply(lambda v: f"{v:+.2f}%"),
+                        "Écart Max": df_disp["Max"].apply(lambda v: f"{v:+.2f}%"),
+                    })
+                    st.dataframe(df_disp_display, use_container_width=True)
+                
+                if fig_binned:
+                    st.markdown("---")
+                    st.markdown("### 4. Analyse par Tranches (Sous PDI)")
+                    st.plotly_chart(fig_binned, use_container_width=True)
                     
         elif mode == "Analyse de Sensibilité": # Analyse de Sensibilité
             if type_sensi == "Spot (Points)":
