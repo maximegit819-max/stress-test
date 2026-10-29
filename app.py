@@ -156,6 +156,7 @@ if lancer:
                     st.subheader("Visualisations")
                     fig1, fig2 = moteur.plot_results(nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec)
                     fig_dist_dec, fig_dist_pr, fig_dist_rappel, fig_dist_dec_reelle, fig_dist_pr_reelle = moteur.plot_distributions(traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, mon_autocall, scenario_krach)
+                    fig_violins_ecart = moteur.plot_dispersion_ecarts_violons(traj_pr, traj_dec, scenario_krach, niveau_initial=niveau_initial)
                     if len(bin_stats) > 0:
                         fig_binned = moteur.plot_binned_averages(bin_stats)
                     else:
@@ -173,8 +174,11 @@ if lancer:
                     st.plotly_chart(fig_dist_dec_reelle, use_container_width=True)
                     st.plotly_chart(fig_dist_pr_reelle, use_container_width=True)
                     
+                    st.markdown("### 3. Dispersion des Écarts (PR - Decrement) par Année")
+                    st.plotly_chart(fig_violins_ecart, use_container_width=True)
+                    
                     if fig_binned:
-                        st.markdown("### 3. Analyse par Tranches (Sous PDI)")
+                        st.markdown("### 4. Analyse par Tranches (Sous PDI)")
                         st.plotly_chart(fig_binned, use_container_width=True)
                     
         elif mode == "Analyse de Sensibilité": # Analyse de Sensibilité

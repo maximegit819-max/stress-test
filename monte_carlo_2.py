@@ -762,6 +762,82 @@ class SimulationEngine:
         
         return fig
 
+    def plot_dispersion_ecarts_violons(self, traj_pr, traj_dec, scenario, niveau_initial=None):
+        import plotly.graph_objects as go
+        import numpy as np
+        
+        if niveau_initial is None:
+            niveau_initial = traj_dec[0, 0]
+            
+        fig = go.Figure()
+        
+        x_labels = [f"Année {k}" for k in range(1, scenario.annees + 1)]
+        means = []
+        medians = []
+        
+        for idx, k in enumerate(range(1, scenario.annees + 1)):
+            t_idx = k * scenario.jours_par_an
+            # Écart en % du spot initial pour les mêmes tirages aléatoires (trajectoires pures)
+            ecart_k = ((traj_pr[:, t_idx] - traj_dec[:, t_idx]) / niveau_initial) * 100.0
+            
+            med = float(np.median(ecart_k))
+            mn = float(np.mean(ecart_k))
+            medians.append(med)
+            means.append(mn)
+            
+            # Violon de l'année k
+            fig.add_trace(go.Violin(
+                y=ecart_k,
+                x=[f"Année {k}"] * len(ecart_k),
+                name=f"Année {k}",
+                box_visible=False,
+                meanline_visible=False,
+                points=False,
+                line_color='#2b5c8f',
+                fillcolor='rgba(43, 92, 143, 0.35)',
+                showlegend=False,
+                hovertemplate=f"<b>Année {k}</b><br>Écart : %{{y:.2f}}% du Spot<extra></extra>"
+            ))
+            
+            # Médiane : ligne rouge horizontale dans chaque violon
+            fig.add_shape(
+                type='line',
+                xref='x', yref='y',
+                x0=idx - 0.28, x1=idx + 0.28,
+                y0=med, y1=med,
+                line=dict(color='red', width=3.5)
+            )
+
+        # Ligne rouge reliant les médianes
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=medians, mode='lines',
+            line=dict(color='red', width=2, dash='dash'),
+            name='Médiane (Ligne rouge)',
+            hovertemplate="<b>%{x}</b><br>Médiane : +%{y:.2f}% du Spot<extra></extra>"
+        ))
+        
+        # Moyenne : Croix
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=means, mode='markers',
+            marker=dict(symbol='x', size=11, color='black', line=dict(width=2.5)),
+            name='Moyenne (Croix)',
+            hovertemplate="<b>%{x}</b><br>Moyenne : +%{y:.2f}% du Spot<extra></extra>"
+        ))
+        
+        fig.update_layout(
+            title="<b>Dispersion des Écarts (Price Return - Decrement) par Année</b><br><sup>Trajectoires pures (sans effet Autocall) - Même tirage aléatoire</sup>",
+            xaxis_title="Année",
+            yaxis_title="Écart : (PR - Dec) / Spot Initial (%)",
+            yaxis=dict(ticksuffix="%"),
+            plot_bgcolor='white',
+            hovermode="closest",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        fig.update_xaxes(showgrid=True, gridcolor='lightgray')
+        fig.update_yaxes(showgrid=True, gridcolor='lightgray')
+        
+        return fig
+
 if __name__ == "__main__":
     mes_regimes = [
         {"duree_annees": 10, "r_perf": 0.0, "vol": 0.18, "yield_initial": 0.03}
