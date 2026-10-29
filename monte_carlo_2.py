@@ -775,6 +775,8 @@ class SimulationEngine:
         x_labels = [f"Année {k}" for k in range(1, nb_annees + 1)]
         means = []
         medians = []
+        mins = []
+        maxs = []
         stats_data = []
         
         for idx, k in enumerate(range(1, nb_annees + 1)):
@@ -787,9 +789,13 @@ class SimulationEngine:
             q25 = float(np.percentile(ecart_k, 25))
             q75 = float(np.percentile(ecart_k, 75))
             iqr = q75 - q25
+            val_min = float(np.min(ecart_k))
+            val_max = float(np.max(ecart_k))
             
             medians.append(med)
             means.append(mn)
+            mins.append(val_min)
+            maxs.append(val_max)
             
             stats_data.append({
                 "Année": f"Année {k}",
@@ -798,8 +804,8 @@ class SimulationEngine:
                 "Q25": q25,
                 "Q75": q75,
                 "IQR": iqr,
-                "Min": float(np.min(ecart_k)),
-                "Max": float(np.max(ecart_k))
+                "Min": val_min,
+                "Max": val_max
             })
             
             # Violon avec boîte à moustache intégrée (Raincloud / Box-in-Violin)
@@ -823,6 +829,36 @@ class SimulationEngine:
                 hoverinfo='y+name'
             ))
             
+            # Moustache verticale jusqu'au Max réel
+            fig.add_shape(
+                type='line', xref='x', yref='y',
+                x0=idx, x1=idx, y0=q75, y1=val_max,
+                line=dict(color='#0f172a', width=1.6),
+                layer='above'
+            )
+            # Barre horizontale (chapeau de moustache) au niveau du Max réel
+            fig.add_shape(
+                type='line', xref='x', yref='y',
+                x0=idx - 0.12, x1=idx + 0.12, y0=val_max, y1=val_max,
+                line=dict(color='#0f172a', width=2.0),
+                layer='above'
+            )
+            
+            # Moustache verticale jusqu'au Min réel
+            fig.add_shape(
+                type='line', xref='x', yref='y',
+                x0=idx, x1=idx, y0=q25, y1=val_min,
+                line=dict(color='#0f172a', width=1.6),
+                layer='above'
+            )
+            # Barre horizontale (chapeau de moustache) au niveau du Min réel
+            fig.add_shape(
+                type='line', xref='x', yref='y',
+                x0=idx - 0.12, x1=idx + 0.12, y0=val_min, y1=val_min,
+                line=dict(color='#0f172a', width=2.0),
+                layer='above'
+            )
+            
             # Barre rouge horizontale pour la médiane au coeur de chaque boîte
             fig.add_shape(
                 type='line',
@@ -833,12 +869,12 @@ class SimulationEngine:
                 layer='above'
             )
 
-        # Ligne rouge en pointillés reliant les médianes
+        # Entrée de légende pour la médiane (barre rouge dans chaque boîte)
         fig.add_trace(go.Scatter(
-            x=x_labels, y=medians, mode='lines',
-            line=dict(color='#dc2626', width=2.5, dash='dash'),
+            x=[None], y=[None], mode='lines',
+            line=dict(color='#dc2626', width=3.5),
             name='Médiane (Ligne rouge)',
-            hovertemplate="<b>%{x}</b><br>Médiane : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
+            showlegend=True
         ))
         
         # Moyenne : Croix noire
@@ -849,34 +885,21 @@ class SimulationEngine:
             hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
         ))
         
-        # Boutons interactifs pour basculer facilement entre la vue complète et la boîte seule
-        violin_trace_indices = list(range(nb_annees))
-        updatemenus = [
-            dict(
-                type="buttons",
-                direction="right",
-                active=0,
-                x=0.0,
-                y=1.12,
-                xanchor="left",
-                yanchor="bottom",
-                buttons=[
-                    dict(
-                        label="Violons + Boîtes intégrées",
-                        method="restyle",
-                        args=[{"fillcolor": "rgba(37, 99, 235, 0.12)", "line.color": "#2563eb"}, violin_trace_indices]
-                    ),
-                    dict(
-                        label="Boîtes à Moustaches Seules",
-                        method="restyle",
-                        args=[{"fillcolor": "rgba(0, 0, 0, 0)", "line.color": "rgba(0, 0, 0, 0)"}, violin_trace_indices]
-                    ),
-                ],
-                bgcolor="rgba(241, 245, 249, 0.9)",
-                bordercolor="#cbd5e1",
-                font=dict(size=12, color="#0f172a")
-            )
-        ]
+        # Extrêmes Max (Chapeau supérieur)
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=maxs, mode='markers',
+            marker=dict(symbol='triangle-up', size=8, color='#0f172a'),
+            name='Max (Moustache haute)',
+            hovertemplate="<b>%{x}</b><br>Max : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
+        ))
+        
+        # Extrêmes Min (Chapeau inférieur)
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=mins, mode='markers',
+            marker=dict(symbol='triangle-down', size=8, color='#0f172a'),
+            name='Min (Moustache basse)',
+            hovertemplate="<b>%{x}</b><br>Min : <b>%{y:+.2f}%</b> du Spot<extra></extra>"
+        ))
         
         fig.update_layout(
             title=dict(
@@ -911,8 +934,7 @@ class SimulationEngine:
                 borderwidth=1,
                 font=dict(size=12, color='#0f172a')
             ),
-            updatemenus=updatemenus,
-            margin=dict(l=60, r=40, t=95, b=60)
+            margin=dict(l=60, r=40, t=85, b=60)
         )
         
         if return_stats:
