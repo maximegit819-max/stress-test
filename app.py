@@ -93,7 +93,7 @@ with st.sidebar.expander("4. Produit Autocall", expanded=(mode in ["Scénario Fi
 with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
     taux_actualisation_pct = st.number_input("Taux d'actualisation (%)", value=3.0, step=0.1)
     taux_actualisation = taux_actualisation_pct / 100.0
-    nb_trajectoires = st.number_input("Nb Trajectoires", value=2000 if mode == "Scénario Fixe" else 1000, step=500)
+    nb_trajectoires = st.number_input("Nb Trajectoires", value=10000, step=1000)
     seed = st.number_input("Seed aléatoire", value=42, step=1)
 
 if mode == "Scénario Fixe":
