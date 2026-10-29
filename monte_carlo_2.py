@@ -149,21 +149,37 @@ class SimulationEngine:
         self.nb_trajectoires = nb_trajectoires
         self.seed = seed
         
-    def run(self, index: DecrementIndex, scenario: MarketScenario, product: AutocallProduct, taux_actualisation=0.0):
+    def simulate_trajectoires(self, index: DecrementIndex, scenario: MarketScenario):
+        """Simule uniquement les trajectoires PR et Décrément (pur stress test sous-jacent)"""
         np.random.seed(self.seed)
-        print(f"Simulation de {self.nb_trajectoires} trajectoires en cours...")
+        print(f"Simulation de {self.nb_trajectoires} trajectoires d'indices en cours...")
         Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
-        
         traj_pr, traj_dec = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
-        
+        return traj_pr, traj_dec
+
+    def evaluer_produit(self, product: AutocallProduct, traj_pr, traj_dec, scenario: MarketScenario, niveau_initial=None, taux_actualisation=0.0):
+        """Évalue les payoffs d'un produit structuré sur des trajectoires existantes"""
+        if niveau_initial is None:
+            niveau_initial = traj_dec[0, 0]
+            
         # Sur le Decrement
         est_rappele_dec, obs_de_rappel_dec = product.evaluate(traj_dec, scenario, self.nb_trajectoires)
-        payoffs_dec = product.calculate_payoff(traj_dec, est_rappele_dec, obs_de_rappel_dec, index.niveau_initial, scenario, taux_actualisation)
+        payoffs_dec = product.calculate_payoff(traj_dec, est_rappele_dec, obs_de_rappel_dec, niveau_initial, scenario, taux_actualisation)
         
         # Sur le Price Return
         est_rappele_pr, obs_de_rappel_pr = product.evaluate(traj_pr, scenario, self.nb_trajectoires)
-        payoffs_pr = product.calculate_payoff(traj_pr, est_rappele_pr, obs_de_rappel_pr, index.niveau_initial, scenario, taux_actualisation)
+        payoffs_pr = product.calculate_payoff(traj_pr, est_rappele_pr, obs_de_rappel_pr, niveau_initial, scenario, taux_actualisation)
         
+        return est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
+
+    def run(self, index: DecrementIndex, scenario: MarketScenario, product: AutocallProduct = None, taux_actualisation=0.0):
+        traj_pr, traj_dec = self.simulate_trajectoires(index, scenario)
+        if product is None:
+            return traj_pr, traj_dec
+            
+        est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = self.evaluer_produit(
+            product, traj_pr, traj_dec, scenario, niveau_initial=index.niveau_initial, taux_actualisation=taux_actualisation
+        )
         return traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr
 
     def calculer_duration(self, est_rappele, obs_de_rappel, product: AutocallProduct, scenario: MarketScenario):
@@ -175,38 +191,6 @@ class SimulationEngine:
         annees_non_rappel = np.full(np.sum(~est_rappele), scenario.annees)
         
         return (np.sum(annees_rappel) + np.sum(annees_non_rappel)) / len(est_rappele)
-
-    def generer_matrice_structurelle(self, index: DecrementIndex, scenario: MarketScenario, base_product: AutocallProduct, list_coupons, list_pdis, list_barrieres, use_decrement=False, taux_actualisation=0.0):
-        import pandas as pd
-        
-        np.random.seed(self.seed)
-        Z_chocs = np.random.normal(0, 1, size=(self.nb_trajectoires, scenario.total_jours))
-        traj_pr, traj_dec = index.simulate(scenario, self.nb_trajectoires, Z_chocs)
-        
-        traj_to_use = traj_dec if use_decrement else traj_pr
-        
-        results = []
-        for pdi_pct in list_pdis:
-            for barriere_pct in list_barrieres:
-                row_data = {'PDI': f"{pdi_pct:.0f}%", 'Barrière': f"{barriere_pct:.0f}%"}
-                for coupon_pct in list_coupons:
-                    test_product = AutocallProduct(
-                        barriere_rappel=index.niveau_initial * (barriere_pct / 100.0),
-                        niveau_pdi=index.niveau_initial * (pdi_pct / 100.0),
-                        non_call_period_mois=base_product.non_call_period_mois,
-                        frequence_obs_mois=base_product.frequence_obs_mois,
-                        degressivite=base_product.degressivite,
-                        coupon_periode=coupon_pct
-                    )
-                    est_rappele, obs_de_rappel = test_product.evaluate(traj_to_use, scenario, self.nb_trajectoires)
-                    payoffs = test_product.calculate_payoff(traj_to_use, est_rappele, obs_de_rappel, index.niveau_initial, scenario, taux_actualisation)
-                    mean_payoff = np.mean(payoffs) * 100
-                    row_data[f"{coupon_pct:.2f}%"] = round(mean_payoff, 2)
-                results.append(row_data)
-                
-        df = pd.DataFrame(results)
-        df.set_index(['PDI', 'Barrière'], inplace=True)
-        return df
 
     def afficher_statistiques(self, nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, product: AutocallProduct, scenario: MarketScenario):
         print(f"#### Statistiques pour le {nom_scenario}\n")
@@ -304,6 +288,8 @@ class SimulationEngine:
 
     def _add_product_levels_plotly(self, fig, product, scenario, niveau_initial):
         """Ajoute les barrières du produit Autocall pour Plotly"""
+        if product is None:
+            return
         pdi_pct = (product.niveau_pdi / niveau_initial) * 100
         rappel_pct = (product.barriere_rappel / niveau_initial) * 100
         
@@ -347,12 +333,13 @@ class SimulationEngine:
                                      line=dict(color='purple', width=2, dash='dashdot'), 
                                      name=f'Rappel Dégressif (-{product.degressivite}%/obs)', showlegend=False))
 
-    def plot_results(self, nom_scenario, traj_pr, traj_dec, reps_scen, product, scenario, index):
+    def plot_results(self, nom_scenario, traj_pr, traj_dec, reps_scen=None, product=None, scenario=None, index=None):
         """Génère et affiche les graphiques interactifs Plotly"""
         import numpy as np
         import plotly.graph_objects as go
         axe_temps = np.linspace(0, scenario.annees, scenario.total_jours + 1)
         titre_base = nom_scenario
+        niveau_initial = index.niveau_initial if index is not None else traj_dec[0, 0]
         
         # ==========================================
         # GRAPHIQUE 1 : Analyse par Quartiles
@@ -361,29 +348,30 @@ class SimulationEngine:
         
         colors = ['#d73027', '#fc8d59', '#fee08b', '#d9ef8b', '#1a9850']
         
-        for idx_rep in range(len(reps_scen)-1, -1, -1):
-            rep = reps_scen[idx_rep]
-            if rep[0] is not None:
-                t_pr, t_dec, label = rep
-                c = colors[idx_rep % len(colors)]
-                fig1.add_trace(go.Scatter(x=axe_temps, y=t_dec, mode='lines', 
-                                          line=dict(color=c, width=2), 
-                                          name=f'Dec ({label})',
-                                          legendgroup=label))
-                fig1.add_trace(go.Scatter(x=axe_temps, y=t_pr, mode='lines', 
-                                          line=dict(color=c, width=1, dash='dash'), 
-                                          opacity=0.7, name=f'PR équivalent ({label})',
-                                          legendgroup=label))
-                
-        self._add_background_regimes_plotly(fig1, scenario)
-        self._add_product_levels_plotly(fig1, product, scenario, index.niveau_initial)
-        
-        fig1.update_layout(
-            title="Trajectoires Temporelles Représentatives (Cas sous PDI)",
-            xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
-            xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
-            margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
+        if reps_scen is not None:
+            for idx_rep in range(len(reps_scen)-1, -1, -1):
+                rep = reps_scen[idx_rep]
+                if rep[0] is not None:
+                    t_pr, t_dec, label = rep
+                    c = colors[idx_rep % len(colors)]
+                    fig1.add_trace(go.Scatter(x=axe_temps, y=t_dec, mode='lines', 
+                                              line=dict(color=c, width=2), 
+                                              name=f'Dec ({label})',
+                                              legendgroup=label))
+                    fig1.add_trace(go.Scatter(x=axe_temps, y=t_pr, mode='lines', 
+                                              line=dict(color=c, width=1, dash='dash'), 
+                                              opacity=0.7, name=f'PR équivalent ({label})',
+                                              legendgroup=label))
+                    
+            self._add_background_regimes_plotly(fig1, scenario)
+            self._add_product_levels_plotly(fig1, product, scenario, niveau_initial)
+            
+            fig1.update_layout(
+                title="Trajectoires Temporelles Représentatives (Cas sous PDI)",
+                xaxis_title="Années", yaxis_title="Niveau (% du Spot)",
+                xaxis=dict(range=[0, scenario.annees]), yaxis=dict(rangemode='tozero'),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="left", x=0),
+                margin=dict(l=40, r=40, t=60, b=80), hovermode="x unified")
 
         # ==========================================
         # GRAPHIQUE 2 : Le nuage de points
@@ -398,8 +386,8 @@ class SimulationEngine:
         for p in pct_levels:
             val_cible = np.percentile(valeurs_finales_toutes_dec, p)
             idx_closest = np.argmin(np.abs(valeurs_finales_toutes_dec - val_cible))
-            t_dec = (traj_dec[idx_closest] / index.niveau_initial) * 100
-            t_pr = (traj_pr[idx_closest] / index.niveau_initial) * 100
+            t_dec = (traj_dec[idx_closest] / niveau_initial) * 100
+            t_pr = (traj_pr[idx_closest] / niveau_initial) * 100
             c = colors_pct_map[p]
             
             if p == 50:
@@ -416,7 +404,7 @@ class SimulationEngine:
                                       legendgroup=label))
         
         self._add_background_regimes_plotly(fig2, scenario)
-        self._add_product_levels_plotly(fig2, product, scenario, index.niveau_initial)
+        self._add_product_levels_plotly(fig2, product, scenario, niveau_initial)
         
         fig2.update_layout(
             title="Trajectoires Temporelles par Centiles Finaux (Top 10% à 90%)",
@@ -427,171 +415,7 @@ class SimulationEngine:
                            
         return fig1, fig2
 
-    def plot_sensibilite(self, valeurs_test, type_sensi, niveau_initial_fixe, decrement_fixe, probs_pdi_dec, probs_rappel, moyennes_dec_crash, moyennes_pr_crash, moyennes_payoffs_dec, moyennes_payoffs_pr, yield_fixe, mes_regimes, durations_dec=None, durations_pr=None):
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-        import numpy as np
-        
-        valeurs_array = np.array(valeurs_test)
-        
-        # --- Calculs Mathématiques ---
-        # 1. Écart de sur-perte
-        ecarts = np.array(moyennes_pr_crash) - np.array(moyennes_dec_crash)
-
-        if type_sensi == "Spot (Points)":
-            step = 200 if max(valeurs_test) - min(valeurs_test) > 500 else max(10, (max(valeurs_test) - min(valeurs_test))//5)
-            x_tick_vals = np.arange(min(valeurs_test), max(valeurs_test)+step, step)
-            x_title = "Écart de Dividende Initial (Niveau du Spot Initial)"
-        else:
-            step = 1.0 if max(valeurs_test) - min(valeurs_test) > 5 else max(0.5, (max(valeurs_test) - min(valeurs_test))/5)
-            x_tick_vals = np.arange(min(valeurs_test), max(valeurs_test)+step, step)
-            x_title = "Écart de Dividende (Yield Naturel du PR en %)"
-
-        x_tick_text = []
-        for v in x_tick_vals:
-            if type_sensi == "Spot (Points)":
-                breakeven_y = (decrement_fixe / v) * 100
-                ecart = (yield_fixe * 100) - breakeven_y
-                x_tick_text.append(f"{ecart:+.2f}%<br>(Spot: {v:.0f} pts)")
-            else:
-                breakeven_y = (decrement_fixe / niveau_initial_fixe) * 100
-                ecart = v - breakeven_y
-                x_tick_text.append(f"{ecart:+.2f}%<br>(Yield: {v:.2f}%)")
-
-        annotation_text = "<b>Hypothèses de Marché</b><br>"
-        for i, regime in enumerate(mes_regimes):
-            yield_str = f"Yield {regime['yield_initial']*100:.1f}%" if type_sensi == "Spot (Points)" else "Yield Variable"
-            annotation_text += f"P{i+1} ({regime['duree_annees']} ans) : Drift PR {regime['r_perf']*100:+.1f}%, Vol {regime['vol']*100:.0f}%, {yield_str}<br>"
-
-        # ==========================================
-        # GRAPHIQUE 1 : Probabilités
-        # ==========================================
-        fig_prob = go.Figure()
-
-        fig_prob.add_trace(
-            go.Scatter(x=valeurs_test, y=probs_pdi_dec, mode='lines+markers',
-                       name='Probabilité PDI (Dec)',
-                       line=dict(color='orange', width=2), marker=dict(size=6))
-        )
-        fig_prob.add_trace(
-            go.Scatter(x=valeurs_test, y=probs_rappel, mode='lines+markers',
-                       name='Probabilité Autocall',
-                       line=dict(color='green', width=2), marker=dict(symbol='diamond', size=6))
-        )
-
-        fig_prob.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-
-        fig_prob.update_layout(
-            title=dict(text=f"<b>1. Probabilités</b>", font=dict(size=18)),
-            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Probabilités (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
-        )
-
-        # ==========================================
-        # GRAPHIQUE 2 : Niveaux Finaux sous PDI
-        # ==========================================
-        fig_niveaux = go.Figure()
-
-        fig_niveaux.add_trace(
-            go.Scatter(x=valeurs_test, y=moyennes_dec_crash, mode='lines+markers',
-                       name='Niveau moyen Decrement (% du Spot)',
-                       line=dict(color='orange', width=2, dash='dash'), marker=dict(symbol='circle', size=6))
-        )
-        fig_niveaux.add_trace(
-            go.Scatter(x=valeurs_test, y=moyennes_pr_crash, mode='lines+markers',
-                       name='Niveau moyen Price Return (% du Spot)',
-                       line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='square', size=6))
-        )
-
-        fig_niveaux.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-
-        fig_niveaux.update_layout(
-            title=dict(text=f"<b>4. Niveaux Finaux Moyens en cas de Krach</b>", font=dict(size=18)),
-            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Niveau Final (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
-        )
-
-        # ==========================================
-        # GRAPHIQUE 3 : Sur-perte
-        # ==========================================
-        fig_ecart = go.Figure()
-
-        fig_ecart.add_trace(
-            go.Scatter(x=valeurs_test, y=ecarts, mode='lines+markers',
-                       name='Sur-perte (Écart PR - Dec)',
-                       line=dict(color='red', width=2), marker=dict(symbol='x', size=6))
-        )
-
-        fig_ecart.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-
-        fig_ecart.update_layout(
-            title=dict(text=f"<b>5. Sur-perte du Decrement</b>", font=dict(size=18)),
-            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Sur-perte (% du Spot Initial)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=700
-        )
-        
-        # ==========================================
-        # GRAPHIQUE 4 : Espérance de Gain (Payoff Moyen)
-        # ==========================================
-        fig_payoff = go.Figure()
-        fig_payoff.add_trace(
-            go.Scatter(x=valeurs_test, y=moyennes_payoffs_dec, mode='lines+markers',
-                       name='Payoff Moyen (Decrement)',
-                       line=dict(color='purple', width=2), marker=dict(symbol='star', size=8))
-        )
-        fig_payoff.add_trace(
-            go.Scatter(x=valeurs_test, y=moyennes_payoffs_pr, mode='lines+markers',
-                       name='Payoff Moyen (Price Return)',
-                       line=dict(color='blue', width=2, dash='dot'), marker=dict(symbol='star', size=8))
-        )
-        fig_payoff.add_hline(y=100.0, line_dash="dash", line_color="black", annotation_text="Capital Garanti (100%)", annotation_position="bottom right")
-        fig_payoff.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-        fig_payoff.update_layout(
-            title=dict(text=f"<b>3. Espérance de Gain (Payoff Moyen)</b>", font=dict(size=18)),
-            xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-            yaxis=dict(title="Payoff Moyen (%)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-            legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-            plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
-        )
-        
-        # ==========================================
-        # GRAPHIQUE 2 : Expected Maturity (Duration)
-        # ==========================================
-        fig_duration = go.Figure()
-        if durations_dec is not None:
-            fig_duration.add_trace(
-                go.Scatter(x=valeurs_test, y=durations_dec, mode='lines+markers',
-                           name='Duration Espérée (Decrement)',
-                           line=dict(color='purple', width=2), marker=dict(symbol='diamond', size=8))
-            )
-        if durations_pr is not None:
-            fig_duration.add_trace(
-                go.Scatter(x=valeurs_test, y=durations_pr, mode='lines+markers',
-                           name='Duration Espérée (Price Return)',
-                           line=dict(color='orange', width=2, dash='dot'), marker=dict(symbol='diamond', size=8))
-            )
-            
-        if durations_dec is not None or durations_pr is not None:
-            maturite_max = sum(r['duree_annees'] for r in mes_regimes)
-            fig_duration.add_hline(y=maturite_max, line_dash="dash", line_color="black", annotation_text=f"Maturité Maximale ({maturite_max} ans)", annotation_position="bottom right")
-            fig_duration.add_annotation(text=annotation_text, xref="paper", yref="paper", x=0.0, y=-0.35, showarrow=False, align="left", bgcolor="rgba(255, 255, 255, 0.85)", bordercolor="lightgray", borderwidth=1, font=dict(size=10, color="gray"))
-            fig_duration.update_layout(
-                title=dict(text=f"<b>2. Évolution de l'Expected Maturity (Duration)</b>", font=dict(size=18)),
-                xaxis=dict(title=x_title, tickvals=x_tick_vals, ticktext=x_tick_text, showgrid=True, gridcolor='lightgray'),
-                yaxis=dict(title="Duration (Années)", rangemode='tozero', showgrid=True, gridcolor='lightgray'),
-                legend=dict(orientation="h", yanchor="top", y=-0.55, xanchor="center", x=0.5),
-                plot_bgcolor='white', hovermode="x unified", margin=dict(b=250), height=600
-            )
-
-        return fig_prob, fig_niveaux, fig_ecart, fig_payoff, fig_duration
-
-    def plot_distributions(self, traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, product, scenario):
+    def plot_distributions(self, traj_pr, traj_dec, est_rappele_pr=None, est_rappele_dec=None, product=None, scenario=None):
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
         import numpy as np
@@ -601,14 +425,6 @@ class SimulationEngine:
         # 1. Distribution des niveaux finaux (sans tenir compte des rappels)
         valeurs_finales_dec = np.clip(traj_dec[:, -1], a_min=None, a_max=5000)
         valeurs_finales_pr = np.clip(traj_pr[:, -1], a_min=None, a_max=5000)
-        
-        # 1. Bis. Distribution des trajectoires non rappelées
-        valeurs_non_rappelees_dec = np.clip(traj_dec[~est_rappele_dec, -1], a_min=None, a_max=5000)
-        valeurs_non_rappelees_pr = np.clip(traj_pr[~est_rappele_pr, -1], a_min=None, a_max=5000)
-        
-        # Poids proportionnels au NOMBRE TOTAL DE TRAJECTOIRES
-        poids_non_rappelees_dec = np.full(len(valeurs_non_rappelees_dec), 100.0 / nb_trajectoires)
-        poids_non_rappelees_pr = np.full(len(valeurs_non_rappelees_pr), 100.0 / nb_trajectoires)
         
         tickvals_dist = list(range(0, 5001, 500))
         ticktext_dist = [str(v) if v < 5000 else "5000+" for v in tickvals_dist]
@@ -621,7 +437,8 @@ class SimulationEngine:
             marker_color='blue', opacity=0.75,
             hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
         ))
-        fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
+        if product is not None:
+            fig_dist_dec.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI")
 
         fig_dist_dec.update_layout(
             title="Distribution des Niveaux Finaux (Decrement - Plafonné à 5000)",
@@ -630,6 +447,35 @@ class SimulationEngine:
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
         )
+        
+        # Graphique Price Return
+        fig_dist_pr = go.Figure()
+        fig_dist_pr.add_trace(go.Histogram(
+            x=valeurs_finales_pr, histnorm='percent', autobinx=False, 
+            xbins=dict(start=0, end=5050, size=50), name="Price Return", 
+            marker_color='orange', opacity=0.75,
+            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
+        ))
+        if product is not None:
+            fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
+        fig_dist_pr.update_layout(
+            title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
+            xaxis_title="Niveau Final (pts)", 
+            yaxis_title="Pourcentage des trajectoires totales (%)",
+            yaxis=dict(ticksuffix="%"),
+            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
+        )
+
+        if product is None or est_rappele_pr is None or est_rappele_dec is None:
+            return fig_dist_dec, fig_dist_pr, None, None, None
+
+        # 1. Bis. Distribution des trajectoires non rappelées
+        valeurs_non_rappelees_dec = np.clip(traj_dec[~est_rappele_dec, -1], a_min=None, a_max=5000)
+        valeurs_non_rappelees_pr = np.clip(traj_pr[~est_rappele_pr, -1], a_min=None, a_max=5000)
+        
+        # Poids proportionnels au NOMBRE TOTAL DE TRAJECTOIRES
+        poids_non_rappelees_dec = np.full(len(valeurs_non_rappelees_dec), 100.0 / nb_trajectoires)
+        poids_non_rappelees_pr = np.full(len(valeurs_non_rappelees_pr), 100.0 / nb_trajectoires)
         
         # Graphique Decrement (Trajectoires Non Rappelées uniquement, rapportées au total)
         fig_dist_dec_reelle = go.Figure()
@@ -644,23 +490,6 @@ class SimulationEngine:
         fig_dist_dec_reelle.update_layout(
             title="Distribution des Trajectoires Non Rappelées (Decrement)",
             xaxis_title="Niveau Final à Maturité (pts)", 
-            yaxis_title="Pourcentage des trajectoires totales (%)",
-            yaxis=dict(ticksuffix="%"),
-            xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
-        )
-        
-        # Graphique Price Return
-        fig_dist_pr = go.Figure()
-        fig_dist_pr.add_trace(go.Histogram(
-            x=valeurs_finales_pr, histnorm='percent', autobinx=False, 
-            xbins=dict(start=0, end=5050, size=50), name="Price Return", 
-            marker_color='orange', opacity=0.75,
-            hovertemplate="Intervalle : %{x} pts<br>Proportion : %{y:.2f}% du total<extra></extra>"
-        ))
-        fig_dist_pr.add_vline(x=product.niveau_pdi, line_dash="dash", line_color="red", annotation_text="PDI (Indicatif)")
-        fig_dist_pr.update_layout(
-            title="Distribution des Niveaux Finaux (Price Return - Plafonné à 5000)",
-            xaxis_title="Niveau Final (pts)", 
             yaxis_title="Pourcentage des trajectoires totales (%)",
             yaxis=dict(ticksuffix="%"),
             xaxis=dict(range=[0, 5200], tickvals=tickvals_dist, ticktext=ticktext_dist)
