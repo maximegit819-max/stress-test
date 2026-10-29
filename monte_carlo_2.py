@@ -859,46 +859,30 @@ class SimulationEngine:
                 layer='above'
             )
             
-            # Barre rouge horizontale pour la médiane au coeur de chaque boîte
+            # Barre rouge horizontale pour la médiane au coeur de chaque boîte (épaisseur affinée)
             fig.add_shape(
                 type='line',
                 xref='x', yref='y',
                 x0=idx - 0.19, x1=idx + 0.19,
                 y0=med, y1=med,
-                line=dict(color='#dc2626', width=3.5),
+                line=dict(color='#dc2626', width=2.0),
                 layer='above'
             )
 
         # Entrée de légende pour la médiane (barre rouge dans chaque boîte)
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode='lines',
-            line=dict(color='#dc2626', width=3.5),
+            line=dict(color='#dc2626', width=2.0),
             name='Médiane (Ligne rouge)',
             showlegend=True
         ))
         
-        # Moyenne : Croix noire
+        # Moyenne : Croix noire plus fine et discrète
         fig.add_trace(go.Scatter(
             x=x_labels, y=means, mode='markers',
-            marker=dict(symbol='x', size=12, color='#0f172a', line=dict(width=2.5, color='#0f172a')),
+            marker=dict(symbol='x', size=9, color='#0f172a', line=dict(width=1.5, color='#0f172a')),
             name='Moyenne (Croix)',
             hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
-        ))
-        
-        # Extrêmes Max (Chapeau supérieur)
-        fig.add_trace(go.Scatter(
-            x=x_labels, y=maxs, mode='markers',
-            marker=dict(symbol='triangle-up', size=8, color='#0f172a'),
-            name='Max (Moustache haute)',
-            hovertemplate="<b>%{x}</b><br>Max : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
-        ))
-        
-        # Extrêmes Min (Chapeau inférieur)
-        fig.add_trace(go.Scatter(
-            x=x_labels, y=mins, mode='markers',
-            marker=dict(symbol='triangle-down', size=8, color='#0f172a'),
-            name='Min (Moustache basse)',
-            hovertemplate="<b>%{x}</b><br>Min : <b>%{y:+.2f}%</b> du Spot<extra></extra>"
         ))
         
         fig.update_layout(
