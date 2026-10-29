@@ -859,28 +859,28 @@ class SimulationEngine:
                 layer='above'
             )
             
-            # Barre rouge horizontale pour la médiane au coeur de chaque boîte (épaisseur affinée)
+            # Barre rouge horizontale pour la médiane au coeur de chaque boîte (trait fin 1px)
             fig.add_shape(
                 type='line',
                 xref='x', yref='y',
                 x0=idx - 0.19, x1=idx + 0.19,
                 y0=med, y1=med,
-                line=dict(color='#dc2626', width=2.0),
+                line=dict(color='#dc2626', width=1.0),
                 layer='above'
             )
 
         # Entrée de légende pour la médiane (barre rouge dans chaque boîte)
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode='lines',
-            line=dict(color='#dc2626', width=2.0),
+            line=dict(color='#dc2626', width=1.0),
             name='Médiane (Ligne rouge)',
             showlegend=True
         ))
         
-        # Moyenne : Croix noire plus fine et discrète
+        # Moyenne : Croix noire fine (taille standard 12, épaisseur 1px)
         fig.add_trace(go.Scatter(
             x=x_labels, y=means, mode='markers',
-            marker=dict(symbol='x', size=9, color='#0f172a', line=dict(width=1.5, color='#0f172a')),
+            marker=dict(symbol='x', size=12, color='#0f172a', line=dict(width=1.0, color='#0f172a')),
             name='Moyenne (Croix)',
             hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
         ))
