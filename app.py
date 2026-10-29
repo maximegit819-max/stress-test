@@ -7,7 +7,6 @@ import pandas as pd
 import monte_carlo_2
 import importlib
 import gc
-import matplotlib.pyplot as plt
 
 importlib.reload(monte_carlo_2)
 from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
@@ -26,20 +25,19 @@ with st.sidebar.expander("1. Durée", expanded=True):
     annees = st.number_input("Années totales", value=10, min_value=1)
 
 with st.sidebar.expander("2. Configuration des Périodes", expanded=True):
-    nb_periodes = st.number_input("Nombre de Périodes", value=3, min_value=1, step=1)
+    nb_periodes = st.number_input("Nombre de Périodes", value=1, min_value=1, step=1)
     
     mes_regimes_input = []
     somme_annees = 0
     for i in range(int(nb_periodes)):
         st.markdown(f"**Période {i+1}**")
-        def_d = 3 if i==0 else (2 if i==1 else 5)
-        def_rp = 4.0 if i==0 else (-15.0 if i==1 else 5.0)
-        def_vol = 15.0 if i==0 else (35.0 if i==1 else 18.0)
-        def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
+        def_d = 10 if i==0 else (2 if i==1 else 5)
+        def_rp = 0.0 if i==0 else (-15.0 if i==1 else 5.0)
+        def_vol = 18.0 if i==0 else (35.0 if i==1 else 18.0)
         def_yi = 3.0 if i==0 else (1.0 if i==1 else 4.0)
         
         d = st.number_input(f"Durée (ans) P{i+1}", value=def_d, key=f"d_pct_{i}")
-        rp = st.number_input(f"Drift Total Return P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
+        rp = st.number_input(f"Drift Price Return P{i+1} (%)", value=def_rp, format="%.1f", key=f"rp_pct_{i}")
         vol = st.number_input(f"Volatilité P{i+1} (%)", value=def_vol, format="%.1f", key=f"vol_pct_{i}")
         if mode != "Surface 3D (Decrement)":
             yi = st.number_input(f"Yield P{i+1} (%)", value=def_yi, format="%.2f", key=f"yi_pct_{i}")
@@ -90,7 +88,7 @@ with st.sidebar.expander("4. Produit Autocall", expanded=(mode in ["Scénario Fi
         
     coupon_periode = st.number_input("Coupon par observation (%)", value=2.0, step=0.1)
     non_call_period_mois = st.number_input("Non-Call (mois)", value=11, step=1)
-    frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=4, step=1)
+    frequence_obs_mois = st.number_input("Fréq. Obs (mois)", value=3, step=1)
 
 with st.sidebar.expander("5. Moteur de Simulation", expanded=False):
     taux_actualisation_pct = st.number_input("Taux d'actualisation (%)", value=3.0, step=0.1)
@@ -178,27 +176,6 @@ if lancer:
                     if fig_binned:
                         st.markdown("### 3. Analyse par Tranches (Sous PDI)")
                         st.plotly_chart(fig_binned, use_container_width=True)
-                    
-                    st.markdown("### 4. Distributions des Écarts (Price Return vs Decrement)")
-                    with st.spinner("Génération des distributions d'écarts..."):
-                        fig_ecarts, df_ecarts = moteur.plot_distribution_ecarts(
-                            traj_pr, traj_dec, scenario_krach, mon_indice_dec
-                        )
-                        st.pyplot(fig_ecarts, use_container_width=True)
-                        plt.close(fig_ecarts)
-
-                        with st.expander("📊 Voir le tableau des statistiques d'écarts par année"):
-                            st.dataframe(df_ecarts.style.format({
-                                "Moyenne (% Spot)": "{:+.2f}%",
-                                "Médiane (% Spot)": "{:+.2f}%",
-                                "Écart-Type (%)": "{:.2f}%",
-                                "P10 (% Spot)": "{:+.2f}%",
-                                "P25 (% Spot)": "{:+.2f}%",
-                                "P75 (% Spot)": "{:+.2f}%",
-                                "P90 (% Spot)": "{:+.2f}%",
-                                "P(PR > Dec) %": "{:.1f}%",
-                                "Moy. en Krach (<50% Spot)": lambda x: f"{x:+.2f}%" if pd.notnull(x) else "N/A"
-                            }), use_container_width=True)
                     
         elif mode == "Analyse de Sensibilité": # Analyse de Sensibilité
             if type_sensi == "Spot (Points)":
