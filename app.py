@@ -94,23 +94,23 @@ if lancer:
                 valeurs_finales_pr = traj_pr[:, -1]
                 moy_dec = np.mean(valeurs_finales_dec)
                 moy_pr = np.mean(valeurs_finales_pr)
-                ecart_moy_pts = moy_pr - moy_dec
+                ecart_moy_pts = moy_dec - moy_pr
                 ecart_moy_pct = (ecart_moy_pts / niveau_initial) * 100.0
-                pct_perte_dec = np.mean(valeurs_finales_dec < niveau_initial) * 100.0
-                pct_perte_pr = np.mean(valeurs_finales_pr < niveau_initial) * 100.0
+                pct_crash_50_dec = np.mean(valeurs_finales_dec < 0.50 * niveau_initial) * 100.0
+                pct_crash_50_pr = np.mean(valeurs_finales_pr < 0.50 * niveau_initial) * 100.0
                 
                 st.subheader("Indicateurs Clés de Marché & Dérive d'Indice à Maturité")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Niveau Moyen PR", f"{moy_pr:.1f} pts", f"{(moy_pr/niveau_initial - 1.0)*100:+.1f}% vs Spot")
                 c2.metric("Niveau Moyen Décrément", f"{moy_dec:.1f} pts", f"{(moy_dec/niveau_initial - 1.0)*100:+.1f}% vs Spot")
-                c3.metric("Écart Moyen (PR - Dec)", f"+{ecart_moy_pct:.2f}% du Spot", f"+{ecart_moy_pts:.1f} pts")
-                c4.metric("Probabilité de Perte (St < S0)", f"{pct_perte_dec:.1f}% (Dec)", f"vs {pct_perte_pr:.1f}% (PR)", delta_color="inverse")
+                c3.metric("Écart Moyen (Dec - PR)", f"{ecart_moy_pct:+.2f}% du Spot", f"{ecart_moy_pts:+.1f} pts")
+                c4.metric("Probabilité Fin < 50% du Spot", f"{pct_crash_50_dec:.1f}% (Dec)", f"vs {pct_crash_50_pr:.1f}% (PR)", delta_color="inverse")
                 
                 st.markdown("---")
                 
                 # 1. Trajectoires Centiles
                 st.subheader("1. Trajectoires Temporelles des Indices par Centiles (Top 10% à 90%)")
-                st.caption("Évolution comparée du Price Return et du Décrément sur les mêmes chocs aléatoires (tirages appariés).")
+                st.caption("Évolution comparée du Price Return et du Décrément sur les mêmes chocs aléatoires.")
                 _, fig_centiles = moteur.plot_results(
                     f"Trajectoires Comparées (Spot {niveau_initial:.0f})", 
                     traj_pr, traj_dec, reps_scen=[], product=None, scenario=scenario_krach, index=mon_indice_dec
@@ -120,7 +120,7 @@ if lancer:
                 st.markdown("---")
                 
                 # 2. Dispersion des écarts (Violons)
-                st.subheader("2. Dispersion des Écarts (Price Return - Décrément) par Année")
+                st.subheader("2. Dispersion des Écarts (Décrément - Price Return) par Année")
                 fig_violins_ecart, stats_disp = moteur.plot_dispersion_ecarts_violons(
                     traj_pr, traj_dec, scenario_krach, niveau_initial=niveau_initial, return_stats=True
                 )
@@ -130,8 +130,8 @@ if lancer:
                     df_disp = pd.DataFrame(stats_disp)
                     df_disp_display = pd.DataFrame({
                         "Horizon": df_disp["Année"],
-                        "Médiane (PR - Dec)": df_disp["Médiane"].apply(lambda v: f"{v:+.2f}%"),
-                        "Moyenne (PR - Dec)": df_disp["Moyenne"].apply(lambda v: f"{v:+.2f}%"),
+                        "Médiane (Dec - PR)": df_disp["Médiane"].apply(lambda v: f"{v:+.2f}%"),
+                        "Moyenne (Dec - PR)": df_disp["Moyenne"].apply(lambda v: f"{v:+.2f}%"),
                         "25e centile (Q1)": df_disp["Q25"].apply(lambda v: f"{v:+.2f}%"),
                         "75e centile (Q3)": df_disp["Q75"].apply(lambda v: f"{v:+.2f}%"),
                         "Écart interquartile (IQR)": df_disp["IQR"].apply(lambda v: f"{v:.2f}%"),

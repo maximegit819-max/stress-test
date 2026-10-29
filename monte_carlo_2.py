@@ -610,8 +610,8 @@ class SimulationEngine:
         
         for idx, k in enumerate(range(1, nb_annees + 1)):
             t_idx = k * scenario.jours_par_an
-            # Écart en % du spot initial pour les mêmes tirages aléatoires (trajectoires pures)
-            ecart_k = ((traj_pr[:, t_idx] - traj_dec[:, t_idx]) / niveau_initial) * 100.0
+            # Écart en % du spot initial : (Decrement - Price Return) pour illustrer le drag négatif
+            ecart_k = ((traj_dec[:, t_idx] - traj_pr[:, t_idx]) / niveau_initial) * 100.0
             
             med = float(np.median(ecart_k))
             mn = float(np.mean(ecart_k))
@@ -711,12 +711,12 @@ class SimulationEngine:
             x=x_labels, y=means, mode='markers',
             marker=dict(symbol='x-thin', size=11, color='#0f172a', line=dict(width=1.0, color='#0f172a')),
             name='Moyenne (Croix)',
-            hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
+            hovertemplate="<b>%{x}</b><br>Moyenne : <b>%{y:+.2f}%</b> du Spot<extra></extra>"
         ))
         
         fig.update_layout(
             title=dict(
-                text="<b>Dispersion des Écarts (Price Return - Decrement) par Année</b><br><span style='font-size:13px; color:#64748b; font-weight:normal;'>Trajectoires pures (sans effet de barrière ni rappel anticipé) — Tirages aléatoires strictement appariés</span>",
+                text="<b>Dispersion des Écarts (Decrement - Price Return) par Année</b>",
                 font=dict(size=18, color='#0f172a')
             ),
             xaxis=dict(
@@ -725,7 +725,7 @@ class SimulationEngine:
                 tickfont=dict(size=13, color='#0f172a')
             ),
             yaxis=dict(
-                title=dict(text="<b>Écart : (PR - Dec) / Spot Initial (%)</b>", font=dict(size=14, color='#0f172a')),
+                title=dict(text="<b>Écart : (Dec - PR) / Spot Initial (%)</b>", font=dict(size=14, color='#0f172a')),
                 ticksuffix="%",
                 zeroline=False, # Pas de ligne à 0% demandée
                 gridcolor='#f1f5f9',
