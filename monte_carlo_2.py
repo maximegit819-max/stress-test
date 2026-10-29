@@ -877,10 +877,10 @@ class SimulationEngine:
             showlegend=True
         ))
         
-        # Moyenne : Croix noire fine (taille standard 12, épaisseur 1px)
+        # Moyenne : Croix noire ultra-fine (symbole natif Plotly 'x-thin' en trait simple)
         fig.add_trace(go.Scatter(
             x=x_labels, y=means, mode='markers',
-            marker=dict(symbol='x', size=12, color='#0f172a', line=dict(width=1.0, color='#0f172a')),
+            marker=dict(symbol='x-thin', size=11, color='#0f172a', line=dict(width=1.0, color='#0f172a')),
             name='Moyenne (Croix)',
             hovertemplate="<b>%{x}</b><br>Moyenne : <b>+%{y:.2f}%</b> du Spot<extra></extra>"
         ))
