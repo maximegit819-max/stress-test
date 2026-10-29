@@ -8,7 +8,7 @@ import monte_carlo_2
 import importlib
 
 importlib.reload(monte_carlo_2)
-from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, SimulationEngine
+from monte_carlo_2 import MarketScenario, DecrementIndex, AutocallProduct, AthenaProduct, PhoenixProduct, SimulationEngine
 
 st.set_page_config(page_title="Simulateur Monte Carlo : Stress Test Indice & Pricing Autocall", layout="wide")
 
@@ -52,9 +52,18 @@ with st.sidebar.expander("3. Indice Decrement", expanded=True):
     decrement_annuel = st.number_input("Décrément Fixe Annuel (pts)", value=50.0, step=5.0)
 
 if mode == "Pricing":
-    with st.sidebar.expander("4. Produit Autocall", expanded=True):
+    with st.sidebar.expander("4. Produit Structuré", expanded=True):
+        type_produit = st.selectbox("Type de Produit", ["Athéna", "Phoenix"])
         st.caption("Les barrières sont exprimées en pourcentage du niveau initial.")
         barriere_rappel_pct = st.number_input("Barrière Rappel (%)", value=100.0, step=10.0) / 100.0
+        
+        if type_produit == "Phoenix":
+            barriere_coupon_pct = st.number_input("Barrière Coupon (%)", value=70.0, step=5.0) / 100.0
+            avec_memoire = st.checkbox("Effet Mémoire des Coupons", value=True)
+        else:
+            barriere_coupon_pct = None
+            avec_memoire = True
+            
         niveau_pdi_pct = st.number_input("Niveau PDI (%)", value=50.0, step=10.0) / 100.0
         degressivite = st.number_input("Dégressivité de Rappel (%/obs)", value=0.0, step=1.0, 
                                         help="Baisse de la barrière en points à chaque constatation après la période de non-call.")
@@ -158,27 +167,41 @@ if lancer:
                 barriere_rappel = niveau_initial * barriere_rappel_pct
                 niveau_pdi = niveau_initial * niveau_pdi_pct
                 
-                mon_autocall = AutocallProduct(
-                    barriere_rappel=barriere_rappel,
-                    niveau_pdi=niveau_pdi,
-                    non_call_period_mois=int(non_call_period_mois),
-                    frequence_obs_mois=int(frequence_obs_mois),
-                    degressivite=float(degressivite),
-                    coupon_periode=float(coupon_periode)
-                )
+                if type_produit == "Athéna":
+                    mon_produit = AthenaProduct(
+                        barriere_rappel=barriere_rappel,
+                        niveau_pdi=niveau_pdi,
+                        non_call_period_mois=int(non_call_period_mois),
+                        frequence_obs_mois=int(frequence_obs_mois),
+                        degressivite=float(degressivite),
+                        coupon_periode=float(coupon_periode)
+                    )
+                else:
+                    barriere_coupon = niveau_initial * barriere_coupon_pct
+                    mon_produit = PhoenixProduct(
+                        barriere_rappel=barriere_rappel,
+                        barriere_coupon=barriere_coupon,
+                        niveau_pdi=niveau_pdi,
+                        non_call_period_mois=int(non_call_period_mois),
+                        frequence_obs_mois=int(frequence_obs_mois),
+                        degressivite=float(degressivite),
+                        coupon_periode=float(coupon_periode),
+                        avec_memoire=avec_memoire
+                    )
                 
                 traj_pr, traj_dec, est_rappele_dec, obs_de_rappel_dec, payoffs_dec, est_rappele_pr, obs_de_rappel_pr, payoffs_pr = moteur.run(
-                    mon_indice_dec, scenario_krach, mon_autocall, taux_actualisation=taux_actualisation
+                    mon_indice_dec, scenario_krach, mon_produit, taux_actualisation=taux_actualisation
                 )
                 
-                duration_dec = moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_autocall, scenario_krach)
-                duration_pr = moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_autocall, scenario_krach)
+                duration_dec = moteur.calculer_duration(est_rappele_dec, obs_de_rappel_dec, mon_produit, scenario_krach)
+                duration_pr = moteur.calculer_duration(est_rappele_pr, obs_de_rappel_pr, mon_produit, scenario_krach)
                 
-                nom_scenario = f"Pricing Autocall (Spot {niveau_initial:.0f})"
+                memoire_str = " (Mémoire)" if (type_produit == "Phoenix" and avec_memoire) else (" (Sans Mémoire)" if type_produit == "Phoenix" else "")
+                nom_scenario = f"Pricing {type_produit}{memoire_str} (Spot {niveau_initial:.0f})"
                 f = io.StringIO()
                 with contextlib.redirect_stdout(f):
                     reps_scen, bin_stats, levier_equivalent = moteur.afficher_statistiques(
-                        nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_autocall, scenario_krach
+                        nom_scenario, traj_pr, traj_dec, est_rappele_dec, payoffs_dec, est_rappele_pr, payoffs_pr, mon_produit, scenario_krach
                     )
                 stats_text = f.getvalue()
                 
@@ -189,12 +212,12 @@ if lancer:
                 
                 valeurs_finales_dec = traj_dec[:, -1]
                 valeurs_finales_pr = traj_pr[:, -1]
-                en_dessous_pdi_dec = (valeurs_finales_dec < mon_autocall.niveau_pdi) & (~est_rappele_dec)
-                en_dessous_pdi_pr = (valeurs_finales_pr < mon_autocall.niveau_pdi) & (~est_rappele_pr)
+                en_dessous_pdi_dec = (valeurs_finales_dec < mon_produit.niveau_pdi) & (~est_rappele_dec)
+                en_dessous_pdi_pr = (valeurs_finales_pr < mon_produit.niveau_pdi) & (~est_rappele_pr)
                 pct_pdi_dec = np.mean(en_dessous_pdi_dec) * 100.0
                 pct_pdi_pr = np.mean(en_dessous_pdi_pr) * 100.0
                 
-                st.subheader("Indicateurs de Performance et de Risque Contractuel")
+                st.subheader(f"Indicateurs de Performance et de Risque : {type_produit}{memoire_str}")
                 kp1, kp2, kp3, kp4, kp5 = st.columns(5)
                 kp1.metric("Duration Espérée", f"{duration_dec:.2f} ans", f"vs {duration_pr:.2f} ans (PR)", delta_color="inverse")
                 kp2.metric("Taux d'Autocall", f"{pct_rappel_dec:.1f}%", f"{pct_rappel_dec - pct_rappel_pr:+.1f}% vs PR")
@@ -211,7 +234,7 @@ if lancer:
                 # 1. Dates de rappel
                 st.subheader("1. Distribution des Dates de Rappel Anticipé")
                 fig_dist_dec, fig_dist_pr, fig_dist_rappel, fig_dist_dec_reelle, fig_dist_pr_reelle = moteur.plot_distributions(
-                    traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, mon_autocall, scenario_krach
+                    traj_pr, traj_dec, est_rappele_pr, est_rappele_dec, mon_produit, scenario_krach
                 )
                 st.plotly_chart(fig_dist_rappel, use_container_width=True)
                 
@@ -220,7 +243,7 @@ if lancer:
                 # 2. Trajectoires sous PDI
                 st.subheader("2. Trajectoires Critiques sous PDI")
                 fig1, _ = moteur.plot_results(
-                    nom_scenario, traj_pr, traj_dec, reps_scen, mon_autocall, scenario_krach, mon_indice_dec
+                    nom_scenario, traj_pr, traj_dec, reps_scen, mon_produit, scenario_krach, mon_indice_dec
                 )
                 if len(reps_scen) > 0:
                     st.plotly_chart(fig1, use_container_width=True)

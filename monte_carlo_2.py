@@ -84,7 +84,7 @@ class DecrementIndex:
 
 
 class AutocallProduct:
-    """Modélise le produit structuré et ses règles de marché"""
+    """Modélise le produit structuré et ses règles de marché (classe de base)."""
     def __init__(self, barriere_rappel=1000.0, niveau_pdi=500.0, non_call_period_mois=11, frequence_obs_mois=3, degressivite=0.0, coupon_periode=2.0):
         self.barriere_rappel = barriere_rappel
         self.niveau_pdi = niveau_pdi
@@ -93,7 +93,7 @@ class AutocallProduct:
         self.degressivite = degressivite
         self.coupon_periode = coupon_periode / 100.0
         
-    def evaluate(self, trajectoires_dec, scenario: MarketScenario, nb_trajectoires):
+    def evaluate(self, trajectoires, scenario: MarketScenario, nb_trajectoires):
         est_rappele = np.zeros(nb_trajectoires, dtype=bool)
         obs_de_rappel = np.zeros(nb_trajectoires, dtype=int)
         
@@ -109,7 +109,7 @@ class AutocallProduct:
                 nb_observations_total += 1
                 if (t >= jours_par_mois * self.non_call_period_mois):
                     barriere_actuelle = self.barriere_rappel - (nb_observations_degressivite * baisse_en_points)
-                    nouveaux_rappels = (~est_rappele) & (trajectoires_dec[:, t] >= barriere_actuelle)
+                    nouveaux_rappels = (~est_rappele) & (trajectoires[:, t] >= barriere_actuelle)
                     
                     obs_de_rappel[nouveaux_rappels] = nb_observations_total
                     est_rappele = est_rappele | nouveaux_rappels
@@ -118,8 +118,9 @@ class AutocallProduct:
                 
         return est_rappele, obs_de_rappel
         
-    def calculate_payoff(self, trajectoires_dec, est_rappele, obs_de_rappel, niveau_initial, scenario: MarketScenario, taux_actualisation: float = 0.0):
-        nb_trajectoires = trajectoires_dec.shape[0]
+    def calculate_payoff(self, trajectoires, est_rappele, obs_de_rappel, niveau_initial, scenario: MarketScenario, taux_actualisation: float = 0.0):
+        # Payoff de type Athéna (comportement par défaut)
+        nb_trajectoires = trajectoires.shape[0]
         payoffs = np.zeros(nb_trajectoires)
         
         # Pour l'actualisation
@@ -133,7 +134,7 @@ class AutocallProduct:
         payoffs[est_rappele] *= np.exp(-taux_actualisation * temps_rappel)
         
         # 2. Non rappelés, au-dessus du PDI
-        valeurs_finales = trajectoires_dec[:, -1]
+        valeurs_finales = trajectoires[:, -1]
         au_dessus_pdi = (~est_rappele) & (valeurs_finales >= self.niveau_pdi)
         payoffs[au_dessus_pdi] = 1.0 * np.exp(-taux_actualisation * scenario.annees)
         
@@ -141,6 +142,100 @@ class AutocallProduct:
         sous_pdi = (~est_rappele) & (valeurs_finales < self.niveau_pdi)
         payoffs[sous_pdi] = (valeurs_finales[sous_pdi] / niveau_initial) * np.exp(-taux_actualisation * scenario.annees)
         
+        return payoffs
+
+
+class AthenaProduct(AutocallProduct):
+    """Produit structuré de type Athéna.
+    Le coupon n'est versé qu'au moment du rappel anticipé (effet mémoire automatique).
+    Aucun flux intermédiaire n'est détaché en cours de vie.
+    """
+    pass
+
+
+class PhoenixProduct(AutocallProduct):
+    """Produit structuré de type Phoenix (avec ou sans mémoire).
+    Comporte deux barrières distinctes :
+    - Barrière de rappel anticipé (Autocall)
+    - Barrière de coupon (détachement périodique au fil de l'eau)
+    Chaque coupon est actualisé à sa propre date de versement.
+    """
+    def __init__(self, barriere_rappel=1000.0, barriere_coupon=700.0, niveau_pdi=500.0, 
+                 non_call_period_mois=11, frequence_obs_mois=3, degressivite=0.0, 
+                 coupon_periode=2.0, avec_memoire=True):
+        super().__init__(
+            barriere_rappel=barriere_rappel,
+            niveau_pdi=niveau_pdi,
+            non_call_period_mois=non_call_period_mois,
+            frequence_obs_mois=frequence_obs_mois,
+            degressivite=degressivite,
+            coupon_periode=coupon_periode
+        )
+        self.barriere_coupon = barriere_coupon
+        self.avec_memoire = avec_memoire
+
+    def calculate_payoff(self, trajectoires, est_rappele, obs_de_rappel, niveau_initial, scenario: MarketScenario, taux_actualisation: float = 0.0):
+        nb_trajectoires = trajectoires.shape[0]
+        payoffs = np.zeros(nb_trajectoires)
+        
+        jours_par_mois = scenario.jours_par_an // 12
+        jours_entre_obs = jours_par_mois * self.frequence_obs_mois
+        annees_par_obs = jours_entre_obs / scenario.jours_par_an
+        
+        # Dates de constatation
+        dates_obs_jours = [t for t in range(1, scenario.total_jours + 1) if t % jours_entre_obs == 0]
+        
+        en_vie = np.ones(nb_trajectoires, dtype=bool)
+        coupons_memoire = np.zeros(nb_trajectoires, dtype=float)
+        
+        for k_idx, t_j in enumerate(dates_obs_jours):
+            obs_num = k_idx + 1
+            t_annee = obs_num * annees_par_obs
+            facteur_actu = np.exp(-taux_actualisation * t_annee)
+            
+            masque_actifs = en_vie
+            if not np.any(masque_actifs):
+                break
+                
+            niveaux_actifs = trajectoires[masque_actifs, t_j]
+            coupon_condition = (niveaux_actifs >= self.barriere_coupon)
+            
+            indices_actifs = np.where(masque_actifs)[0]
+            indices_coupon_ok = indices_actifs[coupon_condition]
+            indices_coupon_ko = indices_actifs[~coupon_condition]
+            
+            # 1. Gestion des coupons
+            if self.avec_memoire:
+                montant_coupons = self.coupon_periode + coupons_memoire[indices_coupon_ok]
+                payoffs[indices_coupon_ok] += montant_coupons * facteur_actu
+                coupons_memoire[indices_coupon_ok] = 0.0
+                
+                # Mise en mémoire pour ceux qui ne franchissent pas la barrière de coupon
+                coupons_memoire[indices_coupon_ko] += self.coupon_periode
+            else:
+                payoffs[indices_coupon_ok] += self.coupon_periode * facteur_actu
+                
+            # 2. Gestion du rappel anticipé à cette observation
+            rappel_a_cette_obs = est_rappele & (obs_de_rappel == obs_num)
+            if np.any(rappel_a_cette_obs):
+                # Remboursement du capital à 100% actualisé
+                payoffs[rappel_a_cette_obs] += 1.0 * facteur_actu
+                en_vie[rappel_a_cette_obs] = False
+                
+        # 3. Remboursement du capital à maturité pour les trajectoires non rappelées
+        non_rappeles = ~est_rappele
+        if np.any(non_rappeles):
+            facteur_actu_maturite = np.exp(-taux_actualisation * scenario.annees)
+            valeurs_finales = trajectoires[non_rappeles, -1]
+            indices_non_rappeles = np.where(non_rappeles)[0]
+            
+            au_dessus_pdi = valeurs_finales >= self.niveau_pdi
+            indices_pdi_ok = indices_non_rappeles[au_dessus_pdi]
+            payoffs[indices_pdi_ok] += 1.0 * facteur_actu_maturite
+            
+            indices_pdi_ko = indices_non_rappeles[~au_dessus_pdi]
+            payoffs[indices_pdi_ko] += (valeurs_finales[~au_dessus_pdi] / niveau_initial) * facteur_actu_maturite
+            
         return payoffs
 
 class SimulationEngine:
@@ -295,6 +390,11 @@ class SimulationEngine:
         
         fig.add_hline(y=pdi_pct, line_dash="dash", line_color="red", line_width=2,
                       annotation_text=f"PDI ({pdi_pct:.0f}%)", annotation_position="bottom right")
+        
+        if hasattr(product, 'barriere_coupon') and product.barriere_coupon is not None:
+            coupon_pct = (product.barriere_coupon / niveau_initial) * 100
+            fig.add_hline(y=coupon_pct, line_dash="dot", line_color="green", line_width=1.5,
+                          annotation_text=f"Coupon ({coupon_pct:.0f}%)", annotation_position="top left")
         
         if product.degressivite == 0.0:
             fig.add_hline(y=rappel_pct, line_dash="dashdot", line_color="purple", line_width=2,
